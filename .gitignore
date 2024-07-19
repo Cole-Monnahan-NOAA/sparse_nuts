@@ -1,0 +1,5 @@
+*.o
+*.dll
+fits*.RDS
+.Rproj.user
+results/*.RDS
