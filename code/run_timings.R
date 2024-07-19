@@ -17,7 +17,8 @@ for(sd in 10^(0:3)){
   fits <- fit_models(obj, iter=2000, warmup=1000, cores=4,
                     chains=4, Q=Q,Qinv=M, cpus=cpus,
                     metric=c('unit', 'diag', 'dense'),
-                    globals=list(data=data),
+                    model='ratios',
+                    globals=list(data=data), replicates=reps,
                     control=list(max_treedepth=15))
   stats.sd <- rbind(stats.sd, cbind(sd=sd, get_stats(fits)))
 }
@@ -43,8 +44,9 @@ for(cor in cors){
   fits <- fit_models(obj, iter=2000, warmup=1000, cores=4,
                     chains=4, Q=Q,Qinv=M,
                     metric=c('unit', 'diag', 'dense'),
-                    globals=list(data=data),
-                    max_treedepth=15)
+                    model='cors',
+                    globals=list(data=data), replicates=reps, cpus=cpus,
+                    control=list(max_treedepth=15))
   stats.cor <- rbind(stats.cor, cbind(cor=cor, get_stats(fits)))
 }
 saveRDS(stats.cor, "results/cor_stats.RDS")

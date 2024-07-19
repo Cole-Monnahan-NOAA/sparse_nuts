@@ -10,6 +10,8 @@ library(tidyr)
 library(dsem)
 library(cowplot)
 library(mvtnorm)
+library(microbenchmark)
+library(future)
 theme_set(theme_bw())
 
 
