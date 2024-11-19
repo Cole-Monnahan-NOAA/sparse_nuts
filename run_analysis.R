@@ -4,6 +4,7 @@
 
 ## devtools::load_all('C:/Users/cole.monnahan/adnuts/')
 ## devtools::install('C:/Users/cole.monnahan/adnuts/')
+## devtools::install_github('Cole-Monnahan-NOAA/adnuts', ref='sparse_M')
 library(adnuts)
 source("code/startup.R")
 
@@ -17,13 +18,13 @@ launch_shinyadmb(fit.demo)
 ## source("code/run_spatial_benchmark.R")
 
 ## Efficiency across a bivariate normal with varying marginal SDs and correlations
-cpus <- 1
-reps <- 1
+cpus <- 3
+reps <- 1:6
 source("code/run_timings.R")
 
 ## increasing dimensionality of a SPDE object
-cpus <- 1
-reps <- 1
+cpus <- 3
+reps <- 1:3
 source('code/run_spde.R')
 
 source('code/load_objects.R')

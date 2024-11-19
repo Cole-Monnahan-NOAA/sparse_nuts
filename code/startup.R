@@ -26,7 +26,7 @@ fit_models<- function(obj,  iter, warmup=NULL, chains=3,
                       replicates=1:3, cpus=3,
                       adapt_metric=FALSE, init='random',
                       metrics=c('unit', 'diag', 'dense', 'sparse'),
-                      control=NULL, model=NULL, ...){
+                      control=NULL, model=NULL, plot=TRUE, ...){
 
   library(snowfall)
   if(is.null(model)) model <- obj$env$DLL
@@ -66,7 +66,7 @@ fit_models<- function(obj,  iter, warmup=NULL, chains=3,
 
   fits <- do.call(rbind, fits)
   saveRDS(fits, file=paste0('results/',model, '_fits.RDS'))
-  plot_output(fits)
+  if(plot) plot_output(fits)
   return(invisible(fits))
 }
 
