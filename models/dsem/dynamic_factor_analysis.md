@@ -16,7 +16,7 @@ vignette: >
 `dsem` is an R package for fitting dynamic structural equation models (DSEMs) with a simple user-interface and generic specification of simultaneous and lagged effects in a potentially recursive structure. Here, we highlight how DSEM can be used to implement dynamic factor analysis (DFA).  We specifically replicate analysis using the Multivariate Autoregressive State-Space (MARSS) package, using data that are provided as an example in the MARSS package.
 
 
-```r
+``` r
 library(dsem)
 library(MARSS)
 library(ggplot2)
@@ -36,7 +36,7 @@ n_factors = 2
 We first illustrate a DFA model using two factors, fitted using MARSS:
 
 
-```r
+``` r
 # Load data
 dat <- t(scale(harborSealWA[,c("SJI","EBays","SJF","PSnd","HC")]))
 
@@ -50,7 +50,7 @@ fit_MARSS <- MARSS( dat,
 
 We can then plot the estimated factors (latent variables):
 
-```r
+``` r
 # Plots states using all data
 plot(fit_MARSS, plot.type="xtT")
 ```
@@ -63,7 +63,7 @@ plot(fit_MARSS, plot.type="xtT")
 
 And the estimated predictor for measurements (manifest variables):
 
-```r
+``` r
 # Plot expectation for data using all data
 plot(fit_MARSS, plot.type="fitted.ytT")
 ```
@@ -79,7 +79,7 @@ plot(fit_MARSS, plot.type="fitted.ytT")
 In DSEM syntax, we can first fit a saturated (full-covariance) model using the argument `covs`:
 
 
-```r
+``` r
 # Add factors to data
 tsdata = ts( cbind(harborSealWA[,c("SJI","EBays","SJF","PSnd","HC")]), start=1978)
 
@@ -103,6 +103,10 @@ mydsem0 = dsem( tsdata = tsdata,
                family = rep("normal", 5),
                control = dsem_control( quiet = TRUE,
                                        run_model = FALSE ) )   
+#> 1 regions found.
+#> Using 1 threads
+#> 1 regions found.
+#> Using 1 threads
 
 # fix all measurement errors at diagonal and equal
 map = mydsem0$tmb_inputs$map
@@ -115,12 +119,16 @@ mydsem_full = dsem( tsdata = tsdata,
                family = rep("normal", 5),
                control = dsem_control( quiet = TRUE,
                                        map = map ) )
+#> 1 regions found.
+#> Using 1 threads
+#> 1 regions found.
+#> Using 1 threads
 ```
 
 We can then define a custom function to plot states:
 
 
-```r
+``` r
 plot_states = function( out,
                         vars=1:ncol(out$tmb_inputs$data$y_tj) ){
   # 
@@ -154,7 +162,7 @@ These estimated states follow the data more closely and have smaller estimated c
 Next, we can specify two factors factors while eliminating additional process error and estimating measurement errors.  This requires us to switch to `gmrf_parameterization = "projection"`, so that we can fit a rank-deficient Gaussian Markov random field:
 
 
-```r
+``` r
 # Add factors to data
 tsdata = harborSealWA[,c("SJI","EBays","SJF","PSnd","HC")]
 newcols = array( NA,
@@ -202,7 +210,7 @@ mydfa = dsem( tsdata = tsdata,
 
 We again plot the estimated latent variables
 
-```r
+``` r
 # Plot estimated factors
 plot_states( mydfa, vars=5+seq_len(n_factors) )
 ```
@@ -211,7 +219,7 @@ plot_states( mydfa, vars=5+seq_len(n_factors) )
 
 and the estimated predictor for manifest variables
 
-```r
+``` r
 # Plot estimated variables
 plot_states( mydfa, vars=1:5 )
 ```
@@ -223,7 +231,7 @@ This results in similar (but not identical) factor values using MARSS and DSEM. 
 To further explore, we can modify the MARSS DFA to eliminate the prior on initial conditions, based on help from Dr. Eli Holmes.  This involves specifying:
 
 
-```r
+``` r
 # Extract internal settings
 modmats <-  summary(fit_MARSS$model, silent=TRUE)
 #> Model Structure is
@@ -245,7 +253,7 @@ fit_MARSS2 = MARSS( dat,
 
 These have estimated time-series that are more similar to those from DSEM
 
-```r
+``` r
 # Plots states using all data
 plot(fit_MARSS2, plot.type="xtT")
 ```
@@ -259,7 +267,7 @@ plot(fit_MARSS2, plot.type="xtT")
 We can now compare the three options in terms of the fitted log-likelihood:
 
 
-```r
+``` r
 # Compare likelihood for MARSS and DSEM
 Table = c( "MARSS" = logLik(fit_MARSS), 
            "DSEM" = logLik(mydfa), 
@@ -279,7 +287,7 @@ knitr::kable( Table, digits=3)
 which confirms that the MARSS model without a penalty on initial conditions results in the same likelihood as DSEM.  Finally, we can also compare the three options in terms of estimated loadings:
 
 
-```r
+``` r
 Table = cbind( "MARSS" = as.vector(fit_MARSS$par$Z),
        "DSEM" = grab(mydfa$opt$par,"beta_z"),
        "MARSS_no_pen" = as.vector(fit_MARSS2$par$Z) )
