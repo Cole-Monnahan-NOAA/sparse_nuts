@@ -3,7 +3,7 @@
 library(StanEstimators)
 library(rstan)
 library(shinystan)
-library(TMB)
+##library(TMB)
 library(dplyr)
 library(ggplot2)
 library(tidyr)
@@ -13,6 +13,7 @@ library(mvtnorm)
 library(microbenchmark)
 library(future)
 library(fmesher)
+library(adnuts)
 theme_set(theme_bw())
 
 
@@ -23,19 +24,24 @@ theme_set(theme_bw())
 #' Fit a model with all 4 variants of NUTS. Returns a list of fits)
 fit_models<- function(obj,  iter, warmup=NULL, chains=3,
                       cores=chains,
-                      replicates=1:3, cpus=3,
+                      replicates=1:3, cpus=3, thin=1,
                       adapt_metric=FALSE, init='random',
                       metrics=c('unit', 'diag', 'dense', 'sparse'),
                       control=NULL, model=NULL, plot=TRUE, ...){
 
   library(snowfall)
-  if(is.null(model)) model <- obj$env$DLL
+  isRTMB <- if(obj$env$DLL=='RTMB') TRUE else FALSE
+  if(is.null(model)) model <- obj$env$DLL #otherwise all RTMB models will have same name
   fp <- gsub('.dll','', unlist(getLoadedDLLs()[[obj$env$DLL]])$path)
   sfInit(parallel=cpus>1, cpus=cpus)
   sfExportAll()
   sfLibrary(adnuts)
   sfLibrary(StanEstimators)
-  sfLibrary(TMB)
+  if(isRTMB){
+    sfLibrary(RTMB)
+  } else {
+    sfLibrary(TMB)
+  }
 
   fits <- sfLapply(replicates, function(i){
     dyn.load(TMB::dynlib(fp))
@@ -53,13 +59,19 @@ fit_models<- function(obj,  iter, warmup=NULL, chains=3,
       }
       fit <- sample_sparse_tmb(obj, iter=iter, warmup=wm,
                                chains=chains, cores=cores,
-                               seed=i, metric=metric,
+                               seed=i, metric=metric, thin=thin,
                                control=control2, init=init,
                                ...)
       fit$par_type <- ifelse(seq_along(fit$par_names) %in% obj$env$random, 'random', 'fixed')
       fit$replicate <- i; fit$model <- model
       fits[[k]] <- fit
       k <- k+1
+      # png(paste0('plots/', model, '_', metric, '_pairs_slow.png'), width=7, height=5, units='in', res = 300)
+      # pairs_admb(fit, order='slow', pars=1:5)
+      # dev.off()
+      # png(paste0('plots/', model, '_', metric, '_pairs_mismatch.png'), width=7, height=5, units='in', res = 300)
+      # pairs_admb(fit, order='mismatch', pars=1:5)
+      dev.off()
     }
     return(invisible(fits))
   })
@@ -70,18 +82,38 @@ fit_models<- function(obj,  iter, warmup=NULL, chains=3,
   return(invisible(fits))
 }
 
-plot_output <- function(fits){
+plot_output <- function(fits, do.pairs=FALSE){
   model <- fits[[1]]$model
+  pdf(paste0('plots/',model,'.pdf'), width=6, height=9)
   g <- plot_stats(fits)
-  ggsave(paste0('plots/',model, '_stats.png'), g, width=5, height=6)
-  g <- plot_maxcors(fits)
-  ggsave(paste0('plots/',model, '_maxcors.png'), g, width=5, height=3.5, units='in')
-  g <- plot_mon(fits)
-  ggsave(paste0('plots/',model, '_monitor.png'), g, width=5, height=3.5, units='in')
-  g <- plot_timings(fits)
-  ggsave(paste0('plots/',model, '_timing.png'), g, width=5, height=4.5, units='in')
+  print(g)
+  #ggsave(paste0('plots/',model, '_stats.png'), g, width=5, height=6)
+  g4 <- plot_maxcors(fits)
+  #ggsave(paste0('plots/',model, '_maxcors.png'), g, width=5, height=3.5, units='in')
+  g5 <- plot_vars(fits)
+  xx <- plot_mon(fits)
+  #ggsave(paste0('plots/',model, '_monitor.png'), g, width=5, height=3.5, units='in')
+  yy <- plot_timings(fits)
+  #ggsave(paste0('plots/',model, '_timing.png'), g, width=5, height=4.5, units='in')
+  g <- cowplot::plot_grid(xx[[1]], xx[[2]], xx[[3]], g4,g5, yy[[1]], ncol=2, byrow = FALSE)
+  #ggsave(paste0('plots/', model, '_results.png'), g, width=7, height=7.5, units='in')
+  print(g)
+  if(do.pairs){
+    for(ii in 1:length(fits)){
+      fittmp <- fits[[ii]]
+      if(fittmp$replicate==1){
+        for(jj in c('slow', 'mismatch')){
+          npar <- min(5,length(fittmp$par_names))
+          if(jj=='slow') npar=npar+1
+          pairs_admb(fittmp, order=jj, pars=1:npar)
+          mtext(text=paste0(fittmp$model, " | ", fittmp$metric, ' | ', jj), 3,
+                line=-2, outer=TRUE, cex=1.2)
+        }
+      }
+    }
+  }
+  dev.off()
 }
-
 
 #' Fit a model with all 4 variants of NUTS. Returns a list of fits)
 fit_models_old <- function(obj,  model, iter, warmup=NULL, chains=4, cores=4,
@@ -122,9 +154,25 @@ get_maxcors <- function(fits){
     diag(post.cor) <- 0 # zero out so can take max along rows
     max.cors <- sapply(1:ncol(post), function(i) post.cor[i,which.max(abs(post.cor[i,]))])
     ess <- fit$monitor$n_eff[1:ncol(post)]
+    eff <- ess/sum(fit$time.total + fit$time.Q + fit$time.Qinv)
     data.frame(model=fit$model, replicate=fit$replicate,
                metric=fit$metric, par=fit$par_names,
-               ess=ess, max.cor=max.cors)
+               ess=ess, max.cor=max.cors, eff=eff)
+  })
+  x <- do.call(rbind,x) %>% mutate(metric=metricf(metric))
+  x
+}
+
+get_vars <- function(fits){
+  x <- lapply(fits, function(fit){
+    post <- as.data.frame(fit)
+    post.sd <- apply(post, 2, sd)
+    mle.sd <- fit$mle$se
+    ess <- fit$monitor$n_eff[1:ncol(post)]
+    eff <- ess/sum(fit$time.total + fit$time.Q + fit$time.Qinv)
+    data.frame(model=fit$model, replicate=fit$replicate,
+               metric=fit$metric, par=fit$par_names,
+               ess=ess, marginal.sd=mle.sd, eff=eff)
   })
   x <- do.call(rbind,x) %>% mutate(metric=metricf(metric))
   x
@@ -182,8 +230,9 @@ plot_timings <- function(fits){
   g2 <- ggplot(x, aes(metric, time, color=operation)) +
     geom_jitter( width=.05) + scale_y_log10() +
     theme(legend.position='none') + labs(y='Time (s)')
-  g <- cowplot::plot_grid(g1,g2, rel_heights=c(1.25,1), ncol=1)
-  return(invisible(g))
+  # g <- cowplot::plot_grid(g1,g2, rel_heights=c(1.25,1), ncol=1)
+  # return(invisible(g))
+  return(list(g1,g2))
 }
 
 metricf <- function(x) factor(x, levels=c('unit', 'diag', 'dense', 'sparse'))
@@ -197,11 +246,12 @@ plot_stats <- function(fits){
                  'Efficiency (ESS/time)')))
   g <- ggplot(stats, aes(x=metric, y=value)) +
     geom_jitter(width=.03, pch=1) +
-    facet_wrap('name', scales='free', ncol=2) + ylim(0,NA)
+    facet_wrap('name', scales='free', ncol=2) + ylim(0,NA) +
+    labs(x=NULL, y=NULL)
   return(invisible(g))
 }
 
-plot_maxcors <- function(fits, logy=FALSE, abscor=FALSE, summarize=FALSE){
+plot_maxcors <- function(fits, logy=TRUE, abscor=FALSE, summarize=FALSE){
   mc <- get_maxcors(fits)
   if(summarize)
     mc <- group_by(model, metric, par) %>%
@@ -214,33 +264,68 @@ plot_maxcors <- function(fits, logy=FALSE, abscor=FALSE, summarize=FALSE){
     xlim <- xlim(-1,1)
     xlab <- 'Maximum correlation'
   }
-  g <- ggplot(mc, aes(max.cor, ess, color=metric)) + geom_point(alpha=.5) +
-    stat_smooth(method='loess', formula=y~x) + xlim +labs(x=xlab, y="Effective sample size")
+  g <- ggplot(mc, aes(max.cor, eff, color=metric)) + geom_point(alpha=.5) +
+    theme(legend.position='top')+
+    #stat_smooth(method='loess', formula=y~x) +
+    xlim +labs(x=xlab, y="Efficiency (ESS/time)", color=NULL)
   if(logy) g <- g + scale_y_log10()
   if(!logy) g <- g+ coord_cartesian(ylim=c(0,NA))
   return(invisible(g))
 }
 
+plot_vars <- function(fits, logy=TRUE, summarize=FALSE){
+  vars <- get_vars(fits)
+  if(summarize)
+    vars <- vars %>% group_by(model, metric, par) %>%
+      summarize(marginal.sd=mean(marginal.sd), ess=mean(ess))
+  g <- ggplot(vars, aes(marginal.sd, eff, color=metric)) +
+    geom_point(alpha=.5) + scale_x_log10()+
+   # stat_smooth(method='loess', formula=y~x) +
+    labs(x='Marginal MLE SD', y="Efficiency (ESS/time)", color=NULL) +
+    theme(legend.position='top')
+  if(logy) g <- g + scale_y_log10()
+  if(!logy) g <- g+ coord_cartesian(ylim=c(0,NA))
+  return(invisible(g))
+}
+
+
 get_mon <- function(fits){
   lapply(fits, function(fit){
+    divs <- sum(extract_sampler_params(fit)$divergent___)
   data.frame(model=fit$model, metric=fit$metric,
              replicate=fit$replicate, par=fit$monitor$variable,
              partype=factor(c(fit$par_type, 'lp__'),
                             levels=c('random', 'fixed', 'lp__')),
              ESS=fit$monitor$n_eff,
-             Rhat=fit$monitor$Rhat)
+             Rhat=fit$monitor$Rhat, divergences=divs)
   }) %>% bind_rows %>% mutate(metric=metricf(metric)) %>%
     arrange(partype)
 }
 
 plot_mon <- function(fits){
-  mon <- get_mon(fits) %>% pivot_longer(cols=c('ESS', 'Rhat'))
- g <- ggplot(mon, aes(metric, y=value, color=partype,
+  mon <- get_mon(fits) %>%
+    pivot_longer(cols=c('ESS', 'Rhat', 'divergences'))
+ g1 <- ggplot(filter(mon, name=='ESS'),
+              aes(metric, y=value, color=partype,
                   group=interaction(par,replicate))) +
     geom_line(alpha=.25) + geom_jitter(width=.05)+
-   facet_wrap('name', scales='free_y', ncol=1) +
-   labs(color=NULL, y=NULL,x=NULL)
-  return(invisible(g))
+   ylim(0,NA) + theme(legend.position = 'top')+
+   labs(x=NULL, y='Effective sample size', color=NULL)
+
+ g2 <- ggplot(filter(mon, name=='Rhat'),
+              aes(metric, y=value, color=partype,
+                  group=interaction(par,replicate))) +
+   geom_line(alpha=.25) + geom_jitter(width=.05)+
+   labs(x=NULL, y='Rhat', color=NULL) + ylim(1,NA) +
+   theme(legend.position = 'top')
+ g3 <- ggplot(filter(mon, name=='divergences'),
+              aes(metric, y=value)) +
+  geom_point()+
+   labs(x=NULL, y='No. of divergences') + ylim(0,NA)
+
+ # facet_wrap('name', scales='free_y', ncol=1) +
+   #labs(color=NULL, y=NULL,x=NULL)
+  return(invisible(list(g1,g2,g3)))
 }
 
 
@@ -331,4 +416,15 @@ sim_spde_dat <- function(n, sparse=TRUE, map=NULL){
   }
   obj <- RTMB::MakeADFun(f, parameters, random="x", silent=TRUE, map=map)
   return(obj)
+}
+
+
+plot_Q <- function(fit){
+  tmp <- fit
+  nn <- length(tmp$par_names)
+  corr <- cov2cor(tmp$mle$Qinv)[1:nn,1:nn]
+  Q <- tmp$mle$Q[1:nn,1:nn]
+  Q[Q!=0] <- 1e-10
+  Q[lower.tri(Q,TRUE)] <- corr[lower.tri(Q,TRUE)]
+  Matrix::image(Q, useRaster=TRUE, at=seq(-1,1, len=50))
 }
