@@ -45,7 +45,7 @@ parnames <- sapply(unique(names(obj$par)),
 # get MCMC posterior draws for reference
 fit <- stan_sample(fn=fn, grad_fun=grad_fun,
                   par_inits=obj$env$par,
-                  num_chains = 1, thin=1, refresh = 1000,
+                  num_chains = 5, thin=10, refresh = 1000,
                   num_samples=10000, num_warmup=1000)
 
 # run pathfinder with default of 1000 draws.. works better if I
@@ -53,6 +53,14 @@ fit <- stan_sample(fn=fn, grad_fun=grad_fun,
 # same place as TMB optimization (obj$par)
 pf <- stan_pathfinder(fn=fn, grad_fun=grad_fun,
                       par_inits=obj$par)
+
+
+# run it again via cmdstanr to make sure it matches
+library(cmdstanr)
+mod <- cmdstan_model(stan_file=here::here('models', '8schools', 'schools.stan'))
+pf2 <- mod$pathfinder(data=dat)
+draws.pf2 <- pf2$draws() |> as.data.frame() |> select(2+ind) |>
+  mutate(tau=log(tau)) |> mutate(type='pathfinder2')
 
 # plot posterior (black), pathfinder (red), and Q draws (green)
 library(dplyr)
@@ -62,10 +70,10 @@ draws.pf <- pf@draws |> as.data.frame() |> select(2+ind) |>
   mutate(type='pathfinder')
 draws.Q <- mvtnorm::rmvnorm(n=1000, mean=obj2$env$last.par.best, sigma=M) |>
   as.data.frame() |> cbind(type='Qrandom')
-names(draws.pf) <- names(draws.Q) <- names(draws.post)
-draws2 <- rbind(draws.pf, draws.Q) |> slice_sample(prop = 1)
+names(draws.pf2) <- names(draws.pf) <- names(draws.Q) <- names(draws.post)
+draws2 <- rbind(draws.pf2, draws.pf, draws.Q) |> slice_sample(prop = 1)
 draws <- rbind(draws.post, draws2) |>
-  mutate(col=as.numeric(factor(type, levels=c('posterior', 'pathfinder', 'Qrandom'))),
+  mutate(col=as.numeric(factor(type, levels=c('posterior', 'pathfinder', 'pathfinder2', 'Qrandom'))),
          cex=ifelse(type=='posterior', .5, 1))
 pairs(draws[,1:4], pch=1, cex=draws$cex, col=draws$col, upper.panel = NULL)
 
@@ -79,3 +87,22 @@ w.Q <- wasserstein(a=a.Q, b=b, p = 1)
 
 w.pf
 w.Q
+
+
+#
+#
+# # reprex for Bob:
+# # run it again via cmdstanr to make sure it matches
+# library(cmdstanr)
+# seed <- 15115
+# mod <- cmdstan_model(stan_file=here::here('models', '8schools', 'schools.stan'))
+# pf <- mod$pathfinder(data=dat, seed = seed)
+# nuts <- mod$sample(data=dat, seed = seed)
+# draws.nuts <- nuts$draws(format='df')  |> select(2:11) |>
+#   mutate(type='NUTS')
+# draws.pf <- pf$draws() |> as.data.frame() |> select(3:12) |>
+#   mutate(type='pathfinder')
+# draws <- rbind(draws.nuts, draws.pf) |>
+#   mutate(col=ifelse(type=='NUTS', 1,2)) |>
+#   mutate(tau=log(tau)) # look at unconstrained variable?
+# pairs(draws[,1:5], pch=1, col=draws$col, upper.panel = NULL)
