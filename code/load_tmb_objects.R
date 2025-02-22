@@ -17,7 +17,9 @@ library(dsem)
 obj.dsem <- readRDS('models/dsem/dsem_obj.RDS')
 obj.dsem$retape()
 
-pk <- readRDS('models/pollock/fit.RDS')
+
+
+pk <- readRDS('models/pollock/pollockfit.RDS')
 compile('models/pollock/pollock.cpp')
 dyn.load('models/pollock/pollock.dll')
 #pk$input$map$sigmaR <- factor(1)
@@ -26,15 +28,6 @@ obj.pollock <- MakeADFun(data=pk$input$dat, parameters=pk$input$pars,
                          DLL='pollock',
                          map=pk$input$map, silent=TRUE)
 obj.pollock$par <- pk$opt$par
-# pk$obj$retape()
-# obj.pollock <- pk$obj
-# opt <- with(obj.pollock, nlminb(pk$opt$par, fn,gr))
-# opt <- with(obj.pollock, nlminb(opt$par, fn,gr))
-# xx <- GOApollock::fit_pk(pk$input)
-# sdrep <- sdreport(obj.pollock, getJointPrecision = TRUE)
-# fittmp <- sample_sparse_tmb(obj.pollock, iter=5000, warmup=100, metric='sparse',
-#                              chains=4, cores=4, control=list(metric='unit_e'))
-# pairs_admb(fittmp, pars=1:6, order='slow')
 
 library(sdmTMB)
 ## Example model
