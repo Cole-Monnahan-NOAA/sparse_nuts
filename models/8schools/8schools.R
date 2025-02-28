@@ -1,6 +1,6 @@
 library(rstan)
 
-
+setwd(here::here('models/8schools'))
 schools_dat <- list(J = 8,
                     y = c(28,  8, -3,  7, -1,  1, 18, 12),
                     sigma = c(15, 10, 16, 11,  9, 11, 10, 18))
@@ -20,10 +20,38 @@ f <- function(pars){
          logtau                          # jacobian
   return(-lp)
 }
-obj.schools <- MakeADFun(f, pars, random=c("eta"))
-opt <- TMBhelper::fit_tmb(obj, getJointPrecision=TRUE)
+obj <- MakeADFun(f, pars, random=c("eta"), silent=TRUE)
 
+## run longer chains
 library(adnuts)
 library(StanEstimators)
-fit <- sample_sparse_tmb(obj.schools, iter=2000, warmup=100, cores=1, chains=4)
-pairs_admb(fit)
+fit <- sample_sparse_tmb(obj, iter=2000, warmup=200, chains=4,
+                         cores=4, globals=list(schools_dat=schools_dat))
+
+## compare correlations and marginal sds
+post <- as.data.frame(fit)
+cors <- cor(post)
+max(abs(cors[lower.tri(cors)]))
+
+obj$par |> length()
+obj$env$par |> length()
+opt <- with(obj, nlminb(par,fn,gr))
+Q <- sdreport(obj, getJointPrecision=TRUE)$jointPrecision
+M <- solve(Q)
+max(abs(cov2cor(M)[lower.tri(M)]))
+
+minsd <- apply(post, 2, sd) |> min()
+maxsd <- apply(post, 2, sd) |> max()
+maxsd/minsd
+minsd <- min(sqrt(diag(M)))
+maxsd <- max(sqrt(diag(M)))
+maxsd/minsd
+
+
+
+pairs_admb(fit, pars=1:6, order='slow')
+plot_uncertainties(fit)
+plot_sampler_params(fit)
+
+setwd(here::here())
+

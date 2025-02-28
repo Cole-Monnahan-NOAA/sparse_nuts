@@ -1153,7 +1153,7 @@ Type objective_function<Type>::operator() ()
     // or < .01 is too flat to be differentiated with data so
     // used as thresholds here.
     loglik(22) += dnorm(log_slp1_fsh_mean, Type(-1.0),Type(1.5), true);
-    loglik(22) += dnorm(log_slp2_fsh_mean, Type(-1.0),Type(1.5), true);
+    loglik(22) += dnorm(log_slp2_fsh_mean, Type(-1.0),Type(1), true);
     loglik(22) += dnorm(inf1_fsh_mean, Type(0.0),Type(3.0), true);
     loglik(22) += dnorm(inf2_fsh_mean, Type(10.0),Type(3.0), true);
     // loglik(22) += dnorm(log_slp1_srv1, Type(-1.0),Type(1.5), true);

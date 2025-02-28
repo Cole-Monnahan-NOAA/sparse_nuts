@@ -29,9 +29,7 @@ library(shinystan)
 launch_shinystan(fit.stan)
 
 pars <- list(alpha=1, beta=1, logsigma=0)
-
 library(RTMB)
-
 f <- function(pars){
   getAll(pars,dat)
   sigma <- exp(logsigma)
@@ -66,11 +64,25 @@ diff.stan - diff.tmb
 library(adnuts)
 fit <- sample_sparse_tmb(obj, iter=2000, warmup=1000, chains=4,
                          cores=4, globals=list(dat=dat))
-
-pairs_admb(fit, pars=1:7, order='slow')
+pairs_admb(fit)
 plot_uncertainties(fit)
 plot_sampler_params(fit)
 
+## compare correlations and marginal sds
+post <- as.data.frame(fit)
+cors <- cor(post)
+max(abs(cors[lower.tri(cors)]))
 
-post.tmb <- as.data.frame(fit)
-apply(post.tmb, 2, sd)
+obj$par |> length()
+obj$env$par |> length()
+opt <- with(obj, nlminb(par,fn,gr))
+#Q <- sdreport(obj, getJointPrecision=TRUE)$jointPrecision
+M <- sdreport(obj)$cov.fixed
+max(abs(cov2cor(M)[lower.tri(M)]))
+
+minsd <- apply(post, 2, sd) |> min()
+maxsd <- apply(post, 2, sd) |> max()
+maxsd/minsd
+minsd <- min(sqrt(diag(M)))
+maxsd <- max(sqrt(diag(M)))
+maxsd/minsd
