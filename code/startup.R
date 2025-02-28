@@ -14,20 +14,37 @@ library(microbenchmark)
 library(future)
 library(fmesher)
 library(adnuts)
+library(here)
 theme_set(theme_bw())
 
+metricf2 <- function(x){
+  lvl <- c('unit', 'diag', 'dense', 'sparse')
+  labs <- paste0(lvl, 'Q')
+  factor(x, levels=lvl, labels=labs)
+}
 
-
+#' Wrapper function to run warmup tests.
+fit_warmups <- function(obj, ...){
+  fit_models(obj=obj, iter=1250,
+             warmup=1000, chains=1,
+             adapt_metric = TRUE,
+             outpath='results/warmups',
+             metrics='auto', plot=FALSE,
+             cpus=cpus, replicates=reps,
+             ...)
+}
 
 
 
 #' Fit a model with all 4 variants of NUTS. Returns a list of fits)
-fit_models<- function(obj,  iter, warmup=NULL, chains=3,
+fit_models<- function(obj,  iter, warmup=NULL, chains=4,
                       cores=chains,
                       replicates=1:3, cpus=3, thin=1,
                       adapt_metric=FALSE, init='random',
-                      metrics=c('unit', 'diag', 'dense', 'sparse'),
-                      control=NULL, model=NULL, plot=TRUE, ...){
+                      metrics=c('unit', 'auto'),
+                      outpath='results',
+                      control=NULL, model=NULL, plot=TRUE, refresh=500,
+                      ...){
 
   library(snowfall)
   isRTMB <- if(obj$env$DLL=='RTMB') TRUE else FALSE
@@ -36,7 +53,6 @@ fit_models<- function(obj,  iter, warmup=NULL, chains=3,
   sfInit(parallel=cpus>1, cpus=cpus)
   sfExportAll()
   sfLibrary(adnuts)
-  sfLibrary(StanEstimators)
   if(isRTMB){
     sfLibrary(RTMB)
   } else {
@@ -49,6 +65,7 @@ fit_models<- function(obj,  iter, warmup=NULL, chains=3,
     fits <- list()
     k <- 1
     for(metric in metrics){
+      message("--- Starting model ", model, " replicate ", i, " for metric ", metric, ' ---')
       control2 <- control; wm <- warmup
       if(is.null(warmup)) wm <- ifelse(metric=='unit', floor(iter/2), 150)
       if(!adapt_metric & metric!='unit'){
@@ -61,7 +78,7 @@ fit_models<- function(obj,  iter, warmup=NULL, chains=3,
                                chains=chains, cores=cores,
                                seed=i, metric=metric, thin=thin,
                                control=control2, init=init,
-                               ...)
+                               refresh=refresh, ...)
       fit$par_type <- ifelse(seq_along(fit$par_names) %in% obj$env$random, 'random', 'fixed')
       fit$replicate <- i; fit$model <- model
       fits[[k]] <- fit
@@ -71,13 +88,13 @@ fit_models<- function(obj,  iter, warmup=NULL, chains=3,
       # dev.off()
       # png(paste0('plots/', model, '_', metric, '_pairs_mismatch.png'), width=7, height=5, units='in', res = 300)
       # pairs_admb(fit, order='mismatch', pars=1:5)
-      dev.off()
+      # dev.off()
     }
     return(invisible(fits))
   })
 
   fits <- do.call(rbind, fits)
-  saveRDS(fits, file=paste0('results/',model, '_fits.RDS'))
+  saveRDS(fits, file=paste0(outpath,'/',model, '_fits.RDS'))
   if(plot) plot_output(fits)
   return(invisible(fits))
 }
@@ -85,6 +102,7 @@ fit_models<- function(obj,  iter, warmup=NULL, chains=3,
 plot_output <- function(fits, do.pairs=FALSE){
   model <- fits[[1]]$model
   pdf(paste0('plots/',model,'.pdf'), width=6, height=9)
+  plot_Q(fits[[1]])
   g <- plot_stats(fits)
   print(g)
   #ggsave(paste0('plots/',model, '_stats.png'), g, width=5, height=6)
@@ -418,13 +436,15 @@ sim_spde_dat <- function(n, sparse=TRUE, map=NULL){
   return(obj)
 }
 
-
+#' Make an image plot showing the correlation (lower triangle)
+#' and sparsity (upper triangle).
 plot_Q <- function(fit){
-  tmp <- fit
-  nn <- length(tmp$par_names)
-  corr <- cov2cor(tmp$mle$Qinv)[1:nn,1:nn]
-  Q <- tmp$mle$Q[1:nn,1:nn]
+  nn <- length(fit$par_names)
+  corr <- cov2cor(fit$mle$Qinv)
+  Q <- fit$mle$Q
   Q[Q!=0] <- 1e-10
   Q[lower.tri(Q,TRUE)] <- corr[lower.tri(Q,TRUE)]
   Matrix::image(Q, useRaster=TRUE, at=seq(-1,1, len=50))
 }
+
+

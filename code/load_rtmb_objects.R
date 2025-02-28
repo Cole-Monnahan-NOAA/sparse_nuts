@@ -1,4 +1,6 @@
 
+if('TMB' %in% .packages()) detach(package:TMB)
+
 library(RTMB)
 schools_dat <- list(J = 8,
                     y = c(28,  8, -3,  7, -1,  1, 18, 12),
@@ -55,11 +57,11 @@ f <- function(pars){
 obj.diamonds <- RTMB::MakeADFun(f, pars, random='b', silent=TRUE)
 
 
-dat <- list(x = c(-10, -8, -6, -4, -2, 0, 2, 4, 6, 8, 10),
+gp_pois_dat <- list(x = c(-10, -8, -6, -4, -2, 0, 2, 4, 6, 8, 10),
             k = c(40, 37, 29, 12, 4, 3, 9, 19, 77, 82, 33))
 pars <- list(logrho=1, logalpha=1,  f_tilde=rep(0,11))
 func <- function(pars){
-  getAll(pars,dat)
+  getAll(pars,gp_pois_dat)
   alpha <- exp(logalpha)
   rho <- exp(logrho)
   cov <- matrix(NA, 11,11)
@@ -69,7 +71,7 @@ func <- function(pars){
       cov[i,j] <- alpha^2*exp(-(x[i]-x[j])^2/(2*rho^2))
     }
   }
-  cov <- cov+diag(1e-10,11)
+  cov <- cov+diag(1e-4,11)
   L_cov <- t(chol(cov)) # upper tri chol
   f <- as.numeric(L_cov %*% f_tilde) # log-predicted lambda
   lp <-
@@ -101,6 +103,32 @@ f <- function(pars){
   REPORT(lp)
   return(-lp)
 }
-
-f(pars)
 obj.kilpisjarvi <- MakeADFun(f, pars, random=NULL, silent=TRUE)
+
+
+radon_dat <- readRDS('models/radon/dat.RDS')
+pars <- list(a=rep(0, radon_dat$J), mu_a=1,  logsigma_a=1, logsigma_y=1)
+f <- function(pars){
+  getAll(pars,radon_dat)
+  y_hat <- a[county]
+  sigma_a <- exp(logsigma_a)
+  sigma_y <- exp(logsigma_y)
+  lp <-
+    dnorm(mu_a, 0,1, log=TRUE) +
+    sum(dnorm(a, mu_a, sigma_a, log=TRUE)) +
+    sum(dnorm(y, y_hat, sigma_y, log=TRUE)) +
+    logsigma_a + logsigma_y
+  REPORT(lp)
+  return(-lp)
+}
+obj.radon <- MakeADFun(f, pars, random='a', silent=TRUE, DLL='radon')
+
+
+library(dsem)
+inputs <- readRDS('models/causal/inputs.RDS')
+obj.causal <- with(inputs, dsemRTMB( sem = sem,
+                    tsdata = tsdata,
+                    family = family,
+                    log_prior = log_prior,
+                    control = dsem_control( use_REML = FALSE) ))$obj
+
