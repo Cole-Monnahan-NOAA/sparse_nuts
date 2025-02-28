@@ -3,3 +3,4 @@
 fits*.RDS
 .Rproj.user
 results/*.RDS
+results/warmups/*.RDS
