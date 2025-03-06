@@ -30,6 +30,12 @@ cpus <- 3
 reps <- 1:3
 source('code/run_spde.R')
 
+## increasing dimensionality of negative binomial regression
+cpus <- 3
+reps <- 1:3
+source('code/run_glmmTMB.R')
+
+
 source('code/load_TMB_objects.R')
 
 ## Warmup tests. Run 10 independent chains with warmup=1000 for
