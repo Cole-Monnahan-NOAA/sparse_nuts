@@ -2,10 +2,12 @@
 library(glmmTMB)
 data(Salamanders)
 dat <- Salamanders
+ndat <- nrow(dat)
 
+options(future.globals.maxSize= 4000*1024^2) # 4000 MB limit
 metrics <- c('unit', 'diag', 'dense', 'sparse')
 stats <- list()
-for(nreps in c(1,4,16,64,256, 512)){
+for(nreps in c(1,2,4,8,16,32,64,128,256)){
   set.seed(nreps)
   message("Starting analysis for nreps=",nreps)
   repid <- rep(1:nreps, times=ndat)
@@ -19,7 +21,8 @@ for(nreps in c(1,4,16,64,256, 512)){
   fits <- fit_models(obj, chains=4, cores=4,
                      metrics=metrics,
                      iter=2000,
-                     init='random', replicates=reps, cpus=cpus,
+                     init='random', replicates=reps,
+                     cpus=ifelse(nreps<=128, cpus,1),
                      model='glmmTMB', plot=FALSE)
   nrepars <- length(obj$env$random)
   stats <- rbind(stats, cbind(nreps=nreps, nrepars=nrepars, get_stats(fits)))
