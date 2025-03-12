@@ -35,6 +35,15 @@ cpus <- 3
 reps <- 1:3
 source('code/run_glmmTMB.R')
 
+# increasing dimensionality of vector autoregressive model in
+# 'dsem', fitted to original wolf-moose model from
+# https://james-thorson-noaa.github.io/dsem/articles/vignette.html#comparison-with-vector-autoregressive-models
+# but modified to have a normal family w/ fixed observation
+# SD=0.1; then simulated data by resimulating the GMRF and new
+# data.
+cpus <- 1
+reps <- 1:3
+source('code/run_VAR.R')
 
 source('code/load_TMB_objects.R')
 
