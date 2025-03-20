@@ -1,8 +1,8 @@
 source('code/load_TMB_objects.R')
 reps <- 1:3 # vector of replicate analyses
 cpus <- 1 # parallel sessions for parallel chains!
-fits.simple <- fit_models(obj.simple, iter=2000,
-                          cpus=cpus, replicates=reps)
+# fits.simple <- fit_models(obj.simple, iter=2000,
+#                           cpus=cpus, replicates=reps)
 fits.sdmTMB <- fit_models(obj.sdmTMB, iter=2000,
                           control=list(adapt_delta=.9),
                           cpus=cpus, replicates=reps)
@@ -18,6 +18,10 @@ fits.dlm <- fit_models(obj.dlm, iter=2000, cpus=cpus,
                        replicates=reps, model='dlm')
 fits.salamanders <- fit_models(obj.salamanders, iter=2000, cpus=cpus,
                        replicates=reps, model='salamanders')
+fits.gp_pois_regr <- fit_models(obj.gp_pois_regr, iter=2000, cpus=cpus,
+                                warmup=1000,
+                               replicates=reps, model='gp_pois_regr',
+                               control=list(adapt_delta=.99))
 
 
 

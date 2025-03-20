@@ -48,6 +48,21 @@ source('code/run_VAR.R')
 source("code/run_warmup.R")
 source('code/run_case_studies.R')
 
+
+# Run some longer wildf ones to see if can identify why it's not
+# working better
+thin <- 5
+warmup <- 2000
+iter <- 2000*5+warmup
+fits.wildf2 <- fit_models(obj.wildf, warmup=warmup, replicates=1, cpus=1,
+                          thin=thin, iter=iter, metrics=c('unit', 'auto'),
+                          model = 'wildf2')
+fits.wildf3 <- fit_models(obj.wildf, warmup=warmup, replicates=1, cpus=1,
+                          thin=thin, iter=iter, metrics=c('unit', 'auto'),
+                          control=list(adapt_delta=.99),
+                          model = 'wildf3')
+
+
 # Need posteriors for this so do it last
 source("code/run_pathfinder.R")
 

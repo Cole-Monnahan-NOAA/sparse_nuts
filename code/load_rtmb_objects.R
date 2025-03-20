@@ -57,39 +57,6 @@ f <- function(pars){
 obj.diamonds <- RTMB::MakeADFun(f, pars, random='b', silent=TRUE)
 
 
-gp_pois_dat <- list(x = c(-10, -8, -6, -4, -2, 0, 2, 4, 6, 8, 10),
-            k = c(40, 37, 29, 12, 4, 3, 9, 19, 77, 82, 33))
-pars <- list(logrho=1, logalpha=1,  f_tilde=rep(0,11))
-func <- function(pars){
-  getAll(pars,gp_pois_dat)
-  alpha <- exp(logalpha)
-  rho <- exp(logrho)
-  cov <- matrix(NA, 11,11)
-  for(i in 1:11){
-    for(j in 1:11){
-      # https://mc-stan.org/docs/functions-reference/matrix_operations.html#exponentiated-quadratic-kernel
-      cov[i,j] <- alpha^2*exp(-(x[i]-x[j])^2/(2*rho^2))
-    }
-  }
-  cov <- cov+diag(1e-4,11)
-  L_cov <- t(chol(cov)) # upper tri chol
-  f <- as.numeric(L_cov %*% f_tilde) # log-predicted lambda
-  lp <-
-    # priors
-    dgamma(rho, shape=25,scale=1/4, log=TRUE)+
-    dnorm(alpha, 0,2,log=TRUE)+
-    sum(dnorm(f_tilde,0,1,log=TRUE)) + # hyperdistribution
-    logrho + logalpha + # Jacobians
-    sum(dpois(k, exp(f), log=TRUE)) # likelihood
-  REPORT(f)
-  return(-lp)
-}
-
-obj.gp_pois <- MakeADFun(func=func, parameters=pars, random='f_tilde', silent=TRUE)
-
-
-
-
 kilpisjarvi_dat <- readRDS('models/kilpisjarvi/dat.RDS')
 pars <- list(alpha=1, beta=1, logsigma=0)
 f <- function(pars){
@@ -130,5 +97,5 @@ obj.causal <- with(inputs, dsemRTMB( sem = sem,
                     tsdata = tsdata,
                     family = family,
                     log_prior = log_prior,
-                    control = dsem_control( use_REML = FALSE) ))$obj
+                    control = dsem_control(run_model=FALSE, use_REML = FALSE) ))$obj
 
