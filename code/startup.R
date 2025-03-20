@@ -207,6 +207,7 @@ get_stats <- function(fits){
     data.frame(model=fit$model, metric=metricf(fit$metric), replicate=fit$replicate, ess=ess,
                rhat=rhat, eff=eff, #time.total=time.total,
                gr=fit$time.gr,
+               time.total=time.total,
                pct.divs=100*mean(sp$divergent__),
                time.warmup=sum(fit$time.warmup),
                time.sampling=sum(fit$time.sampling),
@@ -448,3 +449,91 @@ plot_Q <- function(fit){
 }
 
 
+
+get_wasserstein <- function(reps, obj, post, model,
+                            init=c('mode', 'post', 'unif-2', 'unif-1', '0')){
+  # # use recursion to loop over multiple values (this fails!)
+  # if(length(rep)>1)
+  #   bind_rows(lapply(rep, \(i) get_wasserstein(rep=i, obj, post, model, init)) )
+  isRTMB <- obj$env$DLL=='RTMB'
+  # the only tricky part here is getting the inits right
+  # especially when there's a map used. in that case I think only
+  # default makes sense
+  init <- match.arg(init)
+  draws.post <- post |> select(-c(model, metric, replicate))
+  out <- list()
+  for(rep in reps){
+    message("Starting wassersteine distance for model=", model, "; rep=", rep, " at time=", Sys.time())
+    set.seed(rep)
+    if(init=='post')  inits <- as.numeric(draws.post[sample(1:nrow(draws.post), size=1),])
+    if(init=='mode')  inits <- obj$env$last.par
+    if(init=='unif-2') inits <- runif(ncol(draws.post), min=-2, max=2)
+    if(init=='unif-1') inits <- runif(ncol(draws.post), min=-1, max=1)
+    if(init=='0') inits <- 0*runif(ncol(draws.post), min=-1, max=1)
+    # do joint first so can use parList() to build objm
+    if(isRTMB){
+      objj <- RTMB::MakeADFun(obj$env$data, parameters=obj$env$parList(),
+                              map=obj$env$map, silent=TRUE)
+      objm <- RTMB::MakeADFun(obj$env$data, parameters=objj$env$parList(inits),
+                              map=obj$env$map, random=obj$env$random,
+                              silent=TRUE)
+    } else {
+      objj <- TMB::MakeADFun(data=obj$env$data, parameters=obj$env$parList(),
+                             map=obj$env$map, silent=TRUE, DLL=obj$env$DLL)
+      objm <- TMB::MakeADFun(data=obj$env$data, parameters=objj$env$parList(inits),
+                             map=obj$env$map, random=obj$env$random, DLL=obj$env$DLL,
+                             silent=TRUE)
+    }
+    stopifnot(length(objj$env$last.par)==ncol(draws.post))
+
+    # Get Q draws
+    time0 <- Sys.time()
+    opt <- with(objm, nlminb(par,fn,gr))
+    opt <- with(objm, nlminb(opt$par, fn, gr))
+    time.opt <- Sys.time()-time0
+    mle <- objm$env$last.par.best
+    sdrep <- sdreport(objm, getJointPrecision=TRUE)
+    time.sdrep <- Sys.time()-time0- time.opt
+    Q <- sdrep$jointPrecision
+    if(is.null(Q)){
+      M <- sdrep$cov.fixed
+    } else {
+      M <- solve(Q) |> as.matrix()
+    }
+    draws.Q <- mvtnorm::rmvnorm(n=1000, mean=mle, sigma=M) |>
+      as.data.frame()
+    time.Qdraws <- Sys.time()-time0-time.sdrep
+    time.total <- Sys.time()-time0
+
+    # run pathfinder with default of 1000 draws
+    fn <- function(x) -objj$fn(x)
+    grad_fun <- function(x) -objj$gr(x)
+    time0 <- Sys.time()
+    pf <- stan_pathfinder(fn=fn, grad_fun=grad_fun,
+                          par_inits=inits, quiet=TRUE, refresh=0)
+    time.pf <- Sys.time()-time0
+    draws.pf <- pf@draws |> as.data.frame() |> select(-(1:2)) |>
+      select(-c(.chain, .iteration, .draw))
+
+
+    ## calculate wasserstein distance for both
+    library(transport)
+    a.pf = wpp(draws.pf, mass = rep(1 / nrow(draws.pf), nrow(draws.pf)))
+    a.Q = wpp(draws.Q, mass = rep(1 / nrow(draws.Q), nrow(draws.Q)))
+    b = wpp(draws.post, mass = rep(1 / nrow(draws.post), nrow(draws.post)))
+    w.pf <- wasserstein(a=a.pf, b=b, p = 1)
+    w.Q <- wasserstein(a=a.Q, b=b, p = 1)
+
+    df.Q <- data.frame(model=model, type='Q', w1d=w.Q, rep=rep,
+                       time.total=as.numeric(time.total, 'secs'),
+                       time.opt=as.numeric(time.opt, 'secs'),
+                       time.sdrep=as.numeric(time.sdrep, 'secs'),
+                       time.Qdraws=as.numeric(time.Qdraws, 'secs'))
+    df.pf <- data.frame(model=model, type='Pathfinder', w1d=w.pf,
+                        rep=rep,
+                        time.total=as.numeric(time.pf, 'secs'))
+    out <- bind_rows(out, df.Q, df.pf)
+  }
+  message("Done with wassersteine distance for model=", model)
+  return(out)
+}
