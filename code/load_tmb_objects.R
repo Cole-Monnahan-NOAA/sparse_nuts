@@ -44,5 +44,6 @@ setwd(here())
 
 setwd(here('models/gp_pois_regr'))
 obj.gp_pois_regr <- readRDS('obj.gp_pois_regr.RDS')
+dyn.load('gp_pois_regr')
 obj.gp_pois_regr$retape()
 setwd(here())

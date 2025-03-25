@@ -51,16 +51,21 @@ source('code/run_case_studies.R')
 
 # Run some longer wildf ones to see if can identify why it's not
 # working better
-thin <- 5
+source("code/load_tmb_objects.R")
+thin <- 3
 warmup <- 2000
-iter <- 2000*5+warmup
+iter <- 3000*thin+warmup
 fits.wildf2 <- fit_models(obj.wildf, warmup=warmup, replicates=1, cpus=1,
                           thin=thin, iter=iter, metrics=c('unit', 'auto'),
-                          model = 'wildf2')
+                          model = 'wildf2', init='last.par.best',
+                          control=list(adapt_delta=.8))
 fits.wildf3 <- fit_models(obj.wildf, warmup=warmup, replicates=1, cpus=1,
                           thin=thin, iter=iter, metrics=c('unit', 'auto'),
-                          control=list(adapt_delta=.99),
+                          init = 'last.par.best',
+                          control=list(adapt_delta=.999),
                           model = 'wildf3')
+
+
 
 
 # Need posteriors for this so do it last

@@ -52,28 +52,28 @@ Type objective_function<Type>::operator() ()
   nlp-= dnorm(slope, Type(0.0), Type(10.0), true);
   nlp-= dnorm(intercept, Type(0.0), Type(10.0), true).sum();
 
-  Type ypred;
+  vector<Type> ypred(Ndata);
   // model predictions
   for(int i=0; i<Ndata; i++){
     // prediction logit scale
-    ypred= intercept(stage(i)-1) +
+    ypred(i)= intercept(stage(i)-1) +
       yearInterceptEffect_raw(year(i)-1)*yearInterceptSD2 +
       plantInterceptEffect_raw(plant(i)-1)*plantInterceptSD2+
       Pods(i) * plantSlopeEffect_raw(plant(i)-1)*plantSlopeSD2+
       Pods(i) * slope;
     // likelihood contribution
     if(toF(i)==1){
-      nll+= log(1+exp(-ypred));
+      nll+= log(1+exp(-ypred(i)));
     } else {
-      nll+= ypred+log(1+exp(-ypred));
+      nll+= ypred(i)+log(1+exp(-ypred(i)));
     }
   }
-
+  REPORT(ypred);
   // random effects; non-centered
   nll-=dnorm(yearInterceptEffect_raw, Type(0.0), Type(1.0), true).sum();
   nll-=dnorm(plantInterceptEffect_raw,Type(0.0), Type(1.0), true).sum();
   nll-=dnorm(plantSlopeEffect_raw, Type(0.0), Type(1.0), true).sum();
-
+  REPORT(nll);
   // Jacobian adjustments
   nll-= yearInterceptSD + plantInterceptSD + plantSlopeSD;
   Type nld=nll+nlp; // negative log density
