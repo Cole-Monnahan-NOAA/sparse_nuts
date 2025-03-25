@@ -1,6 +1,6 @@
 
 stats.sd <- list()
-for(sd in 10^(0:3)){
+for(sd in 10^(0:7)){
   Sigma <- matrix(c(1,0,0,sd), nrow=2)
   Mu <- rep(0,2)
   data <- list(Mu=Mu, Sigma=Sigma)
