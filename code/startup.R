@@ -207,6 +207,7 @@ get_stats <- function(fits){
     data.frame(model=fit$model, metric=metricf(fit$metric), replicate=fit$replicate, ess=ess,
                rhat=rhat, eff=eff, #time.total=time.total,
                gr=fit$time.gr,
+               time.Qall=fit$time.Q +fit$time.Qinv + fit$time.opt,
                time.total=time.total,
                pct.divs=100*mean(sp$divergent__),
                time.warmup=sum(fit$time.warmup),

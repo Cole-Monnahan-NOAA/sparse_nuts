@@ -9,7 +9,13 @@ fits.sdmTMB <- fit_models(obj.sdmTMB, iter=2000,
 fits.pollock <- fit_models(obj.pollock, iter=2000,
                            cpus=cpus, replicates=reps)
 fits.wildf <- fit_models(obj.wildf, iter=2000, cpus=cpus,
+                         init='last.par.best',
                          replicates=reps, control=list(adapt_delta=.95))
+# turn on metric adaptation
+fits.wildf_adapted <- fit_models(obj.wildf, iter=2000, cpus=cpus,
+                         replicates=reps, control=list(adapt_delta=.95),
+                         init='last.par.best',
+                         adapt_metric = TRUE, warmup=1000, model='wildf_adapted')
 # this one has some inits fail so fall back to mode
 fits.swallows <- fit_models(obj.swallows, iter=2000, cpus=cpus,
                             replicates=reps, init='last.par.best',
