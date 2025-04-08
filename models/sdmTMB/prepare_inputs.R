@@ -18,7 +18,7 @@ pars2 <- fit0$parlist
 map2 <- fit0$tmb_map
 map2$ln_kappa <- factor(c(NA,NA))
 obj <- TMB::MakeADFun(data=obj$env$data, parameters=pars2,
-                             map=map2, random=fit$tmb_random, silent=TRUE, DLL=obj$env$DLL)
+                             map=map2, random=fit0$tmb_random, silent=TRUE, DLL=obj$env$DLL)
 
 
 saveRDS(obj, file='obj.sdmTMB.RDS')

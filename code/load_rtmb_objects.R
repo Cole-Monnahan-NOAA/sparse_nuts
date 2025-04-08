@@ -1,3 +1,4 @@
+setwd(here())
 
 if('TMB' %in% .packages()) detach(package:TMB)
 
