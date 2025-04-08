@@ -47,6 +47,10 @@ stats_sim |> str()
 
 message("Reading in large case study fit files...")
 results <- list.files('results',  pattern='_fits.RDS', full.names = TRUE) |> lapply(readRDS)
+mods <- sapply(results, \(x) x[[1]]$model)
+ela <- grepl('_ELA', mods)
+results_ela <- results[ela]
+results <- results[!ela]
 
 message("Creating reference posterior list...")
 ref_posts_list <- lapply(results, \(mod) {
@@ -215,3 +219,35 @@ g <- ggplot(eps, aes(iteration, y=value,
   geom_line(alpha=.1) +
   facet_wrap('model', ncol=3,scale='free_y') + labs(y='log step-size')
 ggsave('plots/warmup.png',g, width=8, height=8)
+
+
+# embedded laplace approximation (ELA) results compared to 'auto'
+# for full integration
+stats_ela <- lapply(results_ela, get_stats) |> bind_rows() |>
+  mutate(model=gsub('_ELA', '', model)) |>
+  filter(!model %in% c('glmmTMB', 'VAR', 'spde', 'wildf2', 'wildf3')) |>
+  group_by(model) |>
+  mutate(rel_eff=eff/mean(eff[metric=='unit']),
+         rel_ess=ess/mean(ess[metric=='unit']),
+         rel_time=time.total/mean(time.total[metric=='unit']),
+         gr.ratio=gr2/gr,
+         mean_rel_eff=mean(rel_eff)) |>
+  ungroup() |>
+  arrange(desc(mean_rel_eff)) |>
+  mutate(model=factor(model, levels=unique(model)),
+         metric2=metricf2(metric))
+
+
+stats_tmp <- bind_rows(mutate(stats_ela, ELA=TRUE), mutate(stats, ELA=FALSE)) |>
+  select(model, metric, eff, ELA) |>
+  arrange(model, metric, ELA) |> group_by(model) |>
+  mutate(eff_rel_unit=eff/mean(eff[metric=='unit' & ELA==TRUE]),
+         eff_rel_full=eff/mean(eff[metric!='unit' & ELA==FALSE]))
+g <- ggplot(filter(stats_tmp, metric!='unit' & ELA==TRUE), aes(model, y=eff_rel_full, color=metric)) +
+  geom_hline(yintercept=1) +
+  geom_jitter(width=.1, height=0, alpha=.5) +
+  theme(axis.text.x = element_text(angle = 90, hjust=1, vjust=.5)) +
+  scale_y_log10() + #coord_flip()+
+    labs(x=NULL, y='Efficiency relative to full SNUTS',
+       color=NULL)
+ggsave('plots/case_studies_perf_ELA.png', g, width=4, height=3)

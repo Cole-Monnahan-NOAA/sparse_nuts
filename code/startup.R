@@ -441,10 +441,11 @@ sim_spde_dat <- function(n, sparse=TRUE, map=NULL){
 #' Make an image plot showing the correlation (lower triangle)
 #' and sparsity (upper triangle).
 plot_Q <- function(fit){
+  if(is.null(fit$mle$Q)) return(NULL)
   nn <- length(fit$par_names)
   corr <- cov2cor(fit$mle$Qinv)
   Q <- fit$mle$Q
-  Q[Q!=0] <- 1e-10
+    Q[Q!=0] <- 1e-10
   Q[lower.tri(Q,TRUE)] <- corr[lower.tri(Q,TRUE)]
   Matrix::image(Q, useRaster=TRUE, at=seq(-1,1, len=50))
 }
