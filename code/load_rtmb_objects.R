@@ -3,6 +3,7 @@ setwd(here())
 if('TMB' %in% .packages()) detach(package:TMB)
 
 library(RTMB)
+
 schools_dat <- list(J = 8,
                     y = c(28,  8, -3,  7, -1,  1, 18, 12),
                     sigma = c(15, 10, 16, 11,  9, 11, 10, 18))
@@ -100,3 +101,64 @@ obj.causal <- with(inputs, dsemRTMB( sem = sem,
                     log_prior = log_prior,
                     control = dsem_control(run_model=FALSE, use_REML = FALSE) ))$obj
 
+
+
+irt_2pl_dat <- readRDS('models/irt_2pl/dat.RDS')
+pars <- list(logsigma_theta=1, theta=rep(1, irt_2pl_dat$J),
+             logsigma_a=-0.8, loga=rep(.5, irt_2pl_dat$I),
+             mu_b=1, logsigma_b=1, b=rep(.5, irt_2pl_dat$I))
+func <- function(pars){
+  getAll(irt_2pl_dat, pars)
+  sigma_theta <- exp(logsigma_theta)
+  sigma_a <- exp(logsigma_a)
+  sigma_b <- exp(logsigma_b)
+  a <- exp(loga)
+  lp <-
+    #  jacobian
+    logsigma_a+logsigma_b+  logsigma_theta+
+    # priors
+    dcauchy(sigma_theta, 0, 2, log=TRUE)+
+    sum(dnorm(theta, 0, sigma_theta, log=TRUE))+
+    dcauchy(sigma_a, 0, 2, log=TRUE) +
+    sum(dnorm(loga, 0, sigma_a, log=TRUE))+
+    dnorm(mu_b, mean = 0, sd=5, log=TRUE) +
+    dcauchy(sigma_b, 0, 2, log=TRUE)+
+    # hyperdistribution
+    sum(dnorm(b, mu_b, sigma_b, log=TRUE))
+  # likelihood
+  for(i in 1:I) {
+    pred <- plogis(a[i]*(theta-b[i]))
+    lp <- lp + sum(RTMB:::Term(dbinom(y[i,], size=1, prob=pred, log=TRUE)))
+  }
+  REPORT(lp)
+  return(-lp)
+}
+obj.irt_2pl <- MakeADFun(func, pars, random=c('theta', 'loga','b'))
+
+func_nc <- function(pars){
+  getAll(irt_2pl_dat, pars)
+  sigma_theta <- exp(logsigma_theta)
+  sigma_a <- exp(logsigma_a)
+  sigma_b <- exp(logsigma_b)
+  a <- exp(sigma_a*loga)
+  lp <-
+    #  jacobian
+    logsigma_a+logsigma_b+  logsigma_theta+
+    # priors
+    dcauchy(sigma_theta, 0, 2, log=TRUE)+
+    sum(dnorm(theta, 0, sigma_theta, log=TRUE))+
+    dcauchy(sigma_a, 0, 2, log=TRUE) +
+    sum(dnorm(loga, 0, 1, log=TRUE))+
+    dnorm(mu_b, mean = 0, sd=5, log=TRUE) +
+    dcauchy(sigma_b, 0, 2, log=TRUE)+
+    # hyperdistribution
+    sum(dnorm(b, mu_b, sigma_b, log=TRUE))
+  # likelihood
+  for(i in 1:I) {
+    pred <- plogis(a[i]*(theta-b[i]))
+    lp <- lp + sum(RTMB:::Term(dbinom(y[i,], size=1, prob=pred, log=TRUE)))
+  }
+  REPORT(lp)
+  return(-lp)
+}
+obj.irt_2pl_nc <- MakeADFun(func_nc, pars, random=c('theta', 'loga','b'))

@@ -84,7 +84,14 @@ fits.kilpisjarvi <- fit_models(obj.kilpisjarvi, replicates=reps,
 fits.causal <- fit_models(obj.causal, iter=2000, cpus=cpus, replicates=reps,
                           model='causal', init='last.par.best',
                           control=list(adapt_delta=.9))
-
+fits.irt_2pl <- fit_models(obj.irt_2pl, iter=2000, cpus=cpus, replicates=reps,
+                          model='irt_2pl', init='last.par.best',
+                          globals=list(irt_2pl_dat=irt_2pl_dat),
+                          control=list(adapt_delta=.9))
+fits.irt_2pl_nc <- fit_models(obj.irt_2pl_nc, iter=2000, cpus=cpus, replicates=reps,
+                           model='irt_2pl_nc', init='random',
+                           globals=list(irt_2pl_dat=irt_2pl_dat),
+                           control=list(adapt_delta=.9))
 
 # Rerun with laplace turned on, called "embedded laplace
 # approximation" (ELA) by Margossian et al
@@ -107,4 +114,13 @@ fits.causal_ELA <- fit_models(obj.causal, iter=2000, cpus=cpus, replicates=reps,
                           model='causal_ELA', init='last.par.best',
                           laplace=TRUE,
                           control=list(adapt_delta=.9))
-
+fits.irt_2pl_ELA <- fit_models(obj.irt_2pl, iter=2000, cpus=cpus, replicates=reps,
+                           model='irt_2pl_ELA', init='random',
+                           laplace=TRUE,
+                           globals=list(irt_2pl_dat=irt_2pl_dat),
+                           control=list(adapt_delta=.9))
+fits.irt_2pl_nc_ELA <- fit_models(obj.irt_2pl_nc, iter=2000, cpus=cpus, replicates=reps,
+                               model='irt_2pl_nc_ELA', init='random',
+                               laplace=TRUE,
+                               globals=list(irt_2pl_dat=irt_2pl_dat),
+                               control=list(adapt_delta=.9))
