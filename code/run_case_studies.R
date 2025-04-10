@@ -28,6 +28,8 @@ fits.gp_pois_regr <- fit_models(obj.gp_pois_regr, iter=2000, cpus=cpus,
                                 warmup=1000,
                                replicates=reps, model='gp_pois_regr',
                                control=list(adapt_delta=.99))
+fits.petrel <- fit_models(obj.petrel, iter=600, cpus=cpus,
+                               replicates=reps, model='petrel')
 
 # Rerun with laplace turned on, called "embedded laplace
 # approximation" (ELA) by Margossian et al
@@ -59,7 +61,9 @@ fits.gp_pois_regr_ELA <- fit_models(obj.gp_pois_regr, iter=2000, cpus=cpus,
                                 replicates=reps, model='gp_pois_regr_ELA',
                                 control=list(adapt_delta=.99),
                                 laplace=TRUE)
-
+fits.petrel_ELA <- fit_models(obj.petrel, iter=2000, cpus=cpus,
+                              laplace=TRUE,
+                          replicates=reps, model='petrel_ELA')
 
 source('code/load_RTMB_objects.R')
 reps <- 1:3 # vector of replicate analyses
