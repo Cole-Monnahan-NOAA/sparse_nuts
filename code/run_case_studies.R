@@ -28,8 +28,9 @@ fits.gp_pois_regr <- fit_models(obj.gp_pois_regr, iter=2000, cpus=cpus,
                                 warmup=1000,
                                replicates=reps, model='gp_pois_regr',
                                control=list(adapt_delta=.99))
-fits.petrel <- fit_models(obj.petrel, iter=600, cpus=cpus,
-                               replicates=reps, model='petrel')
+fits.petrel <- fit_models(obj.petrel, iter=2000, cpus=cpus,
+                          init='last.par.best',
+                          replicates=reps, model='petrel')
 
 # Rerun with laplace turned on, called "embedded laplace
 # approximation" (ELA) by Margossian et al
@@ -61,9 +62,9 @@ fits.gp_pois_regr_ELA <- fit_models(obj.gp_pois_regr, iter=2000, cpus=cpus,
                                 replicates=reps, model='gp_pois_regr_ELA',
                                 control=list(adapt_delta=.99),
                                 laplace=TRUE)
-fits.petrel_ELA <- fit_models(obj.petrel, iter=2000, cpus=cpus,
-                              laplace=TRUE,
-                          replicates=reps, model='petrel_ELA')
+# fits.petrel_ELA <- fit_models(obj.petrel, iter=2000, cpus=cpus,
+#                               laplace=TRUE, init='last.par.best',
+#                           replicates=reps, model='petrel_ELA')
 
 source('code/load_RTMB_objects.R')
 reps <- 1:3 # vector of replicate analyses
@@ -96,6 +97,10 @@ fits.irt_2pl_nc <- fit_models(obj.irt_2pl_nc, iter=2000, cpus=cpus, replicates=r
                            model='irt_2pl_nc', init='random',
                            globals=list(irt_2pl_dat=irt_2pl_dat),
                            control=list(adapt_delta=.9))
+fits.lynx <- fit_models(obj.lynx, replicates=reps, cpus=cpus,
+                         iter=2000, globals=globals.lynx,
+                         control=list(adapt_delta=.9), init='last.par.best',
+                         model='lynx')
 
 # Rerun with laplace turned on, called "embedded laplace
 # approximation" (ELA) by Margossian et al
@@ -128,3 +133,8 @@ fits.irt_2pl_nc_ELA <- fit_models(obj.irt_2pl_nc, iter=2000, cpus=cpus, replicat
                                laplace=TRUE,
                                globals=list(irt_2pl_dat=irt_2pl_dat),
                                control=list(adapt_delta=.9))
+fits.lynx_ELA <- fit_models(obj.lynx, replicates=reps, cpus=cpus,
+                            laplace=TRUE,
+                            iter=2000, globals=globals.lynx,
+                            control=list(adapt_delta=.9), init='last.par.best',
+                            model='lynx_ELA')
