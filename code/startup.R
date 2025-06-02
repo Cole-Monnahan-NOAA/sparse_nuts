@@ -19,7 +19,8 @@ theme_set(theme_bw())
 
 metricf2 <- function(x){
   lvl <- c('unit', 'diag', 'dense', 'sparse')
-  labs <- paste0(lvl, 'Q')
+  labs <- lvl
+  labs[1] <- 'no'
   factor(x, levels=lvl, labels=labs)
 }
 
@@ -438,21 +439,6 @@ sim_spde_dat <- function(n, sparse=TRUE, map=NULL){
   return(obj)
 }
 
-#' Make an image plot showing the correlation (lower triangle)
-#' and sparsity (upper triangle).
-plot_Q <- function(fit, Q=NULL){
-  if(is.null(Q)){
-    if(is.null(fit$mle$Q)) return(NULL)
-    nn <- length(fit$par_names)
-    corr <- cov2cor(fit$mle$Qinv)
-    Q <- fit$mle$Q
-  } else {
-    corr <- cov2cor(solve(Q))
-  }
-  Q[Q!=0] <- 1e-10
-  Q[lower.tri(Q,TRUE)] <- corr[lower.tri(Q,TRUE)]
-  Matrix::image(Q, useRaster=TRUE, at=seq(-1,1, len=50))
-}
 
 
 
@@ -540,6 +526,7 @@ get_wasserstein <- function(reps, obj, post, model,
                         time.total=as.numeric(time.pf, 'secs'))
     out <- bind_rows(out, df.Q, df.pf)
   }
+  saveRDS(out, paste0('results/pathfinder/', model, '_pathfinder.RDS'))
   message("Done with wassersteine distance for model=", model)
   return(out)
 }

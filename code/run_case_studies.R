@@ -1,6 +1,8 @@
 source('code/load_TMB_objects.R')
 reps <- 1:3 # vector of replicate analyses
 cpus <- 1 # parallel sessions for parallel chains!
+
+
 # fits.simple <- fit_models(obj.simple, iter=2000,
 #                           cpus=cpus, replicates=reps)
 fits.sdmTMB <- fit_models(obj.sdmTMB, iter=2000,
@@ -31,6 +33,14 @@ fits.gp_pois_regr <- fit_models(obj.gp_pois_regr, iter=2000, cpus=cpus,
 fits.petrel <- fit_models(obj.petrel, iter=2000, cpus=cpus,
                           init='last.par.best',
                           replicates=reps, model='petrel')
+fits.wham <- fit_models(obj.wham, iter=2000, cpus=cpus,
+                        init='last.par.best',
+                        control=list(adapt_delta=.9),
+                        replicates=reps, model='wham')
+fits.sam <- fit_models(obj.sam, iter=2000, cpus=cpus,
+                        init='last.par.best',
+                        control=list(adapt_delta=.9),
+                        replicates=reps, model='sam')
 
 # Rerun with laplace turned on, called "embedded laplace
 # approximation" (ELA) by Margossian et al
@@ -62,9 +72,24 @@ fits.gp_pois_regr_ELA <- fit_models(obj.gp_pois_regr, iter=2000, cpus=cpus,
                                 replicates=reps, model='gp_pois_regr_ELA',
                                 control=list(adapt_delta=.99),
                                 laplace=TRUE)
+# why is this sooo slow??
+# 1000 transitions using 10 leapfrog steps per transition would take 10853.6 seconds.
 # fits.petrel_ELA <- fit_models(obj.petrel, iter=2000, cpus=cpus,
-#                               laplace=TRUE, init='last.par.best',
-#                           replicates=reps, model='petrel_ELA')
+#                                laplace=TRUE, init='last.par.best',
+#                            replicates=reps, model='petrel_ELA')
+## crazy slow again
+# fits.wham_ELA <- fit_models(obj.wham, iter=2000, cpus=cpus,
+#                         init='last.par.best', laplace=TRUE,
+#                         control=list(adapt_delta=.9),
+#                         replicates=reps, model='wham_ELA')
+fits.sam_ELA <- fit_models(obj.sam, iter=2000, cpus=cpus,
+                       init='last.par.best', laplace=TRUE,
+                       control=list(adapt_delta=.9),
+                       replicates=reps, model='sam_ELA')
+
+
+
+
 
 source('code/load_RTMB_objects.R')
 reps <- 1:3 # vector of replicate analyses

@@ -55,3 +55,16 @@ setwd(here('models/petrel'))
 obj.petrel <- readRDS('obj.petrel.RDS')
 obj.petrel$retape()
 setwd(here())
+
+library(wham)
+setwd(here('models/wham'))
+obj.wham <- readRDS('obj.wham.RDS')
+obj.wham$retape()
+setwd(here())
+
+
+library(stockassessment)
+setwd(here('models/sam'))
+obj.sam <- readRDS('obj.sam.RDS')
+obj.sam$retape()
+setwd(here())

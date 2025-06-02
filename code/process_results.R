@@ -3,6 +3,8 @@
 setwd(here::here())
 source("code/startup.R")
 
+skip.models <- c('ratios', 'ratio', 'RTMB', 'simple', 'wildf2', 'wildf3', 'wildf4', 'cors', 'cor')
+skip.models <- c(skip.models, paste0(skip.models, '_ELA'))
 
 stats_sim <- bind_rows(readRDS('results/spde_stats.RDS'),
                        readRDS('results/VAR_stats.RDS'),
@@ -45,15 +47,20 @@ ggsave('plots/perf_sim.png', g, width=7, height=4)
 stats_sim |> str()
 
 
+
 message("Reading in large case study fit files...")
-results <- list.files('results',  pattern='_fits.RDS', full.names = TRUE) |> lapply(readRDS)
+xx <- list.files('results',  pattern='_fits.RDS', full.names = TRUE)
+xx <- xx[!xx %in% paste0('results/',skip.models,'_fits.RDS')]
+results <- xx |> lapply(readRDS)
 mods <- sapply(results, \(x) x[[1]]$model)
+
 ela <- grepl('_ELA', mods)
 results_ela <- results[ela]
 results <- results[!ela]
 
 message("Creating reference posterior list...")
 ref_posts_list <- lapply(results, \(mod) {
+  print(mod[[1]]$model)
                df=lapply(mod, \(x)
                  cbind(model=x$model, metric=x$metric, replicate=x$replicate,
                        as.data.frame(x))) |> bind_rows()
@@ -74,7 +81,6 @@ names(ref_posts_list) <- lapply(ref_posts_list, \(x) x$model[1]) |> unlist()
 saveRDS(ref_posts_list, 'results/ref_posts_list.RDS')
 
 stats <- lapply(results, get_stats) |> bind_rows() |>
-  filter(!model %in% c('glmmTMB', 'VAR', 'spde', 'wildf2', 'wildf3')) |>
   group_by(model) |>
   mutate(rel_eff=eff/mean(eff[metric=='unit']),
          rel_ess=ess/mean(ess[metric=='unit']),
@@ -107,17 +113,32 @@ stats <- lapply(results, get_stats) |> bind_rows() |>
 
 
 perf_long <- stats |> pivot_longer(cols=c('rel_ess', 'rel_time', 'rel_eff')) |>
-  mutate(name2=factor(name, levels=c('rel_time', 'rel_ess', 'rel_eff'),
+  mutate(pre_metric=metricf2(metric),
+         name2=factor(name, levels=c('rel_time', 'rel_ess', 'rel_eff'),
                       labels=c('Time', 'min ESS', 'Efficiency (ESS/s)')))
-g <- ggplot(perf_long, aes(x=model, y=value, color=metric)) +
+g <- ggplot(perf_long, aes(x=model, y=value, color=pre_metric)) +
   geom_hline(yintercept=1) +
   geom_jitter(width=.1, height=0, alpha=.5) +
   theme(axis.text.x = element_text(angle = 90, hjust=1, vjust=.5)) +
   scale_y_log10() + #coord_flip()+
   facet_wrap('name2', ncol=1, scales='free_y') +
-  labs(x=NULL, y='Value relative to unit metric',
+  labs(x=NULL, y='Value relative to no pre-metric',
        color=NULL)
 ggsave('plots/case_studies_perf_rel.png', g, width=4, height=6)
+
+g <- ggplot(filter(perf_long, name=='rel_eff'),
+            aes(x=model, y=value, color=pre_metric)) +
+  geom_hline(yintercept=1) +
+  geom_jitter(width=.1, height=0, alpha=.5) +
+  theme(axis.text.x = element_text(angle = 90, hjust=1, vjust=.5),
+        legend.position = 'inside', legend.position.inside = c(.9,.7)) +
+  scale_y_log10() + #coord_flip()+
+  facet_wrap('name2', ncol=1, scales='free_y') +
+  labs(x=NULL, y='Value relative to no pre-metric',
+       color=NULL)
+g
+ggsave('plots/case_studies_eff_rel.png', g, width=5, height=3.5)
+
 
 filter(perf_long, model=='wildf_adapted' & replicate==1) |> select(mean_rel_eff)
 
@@ -241,7 +262,8 @@ stats_ela <- lapply(results_ela, get_stats) |> bind_rows() |>
 stats_tmp <- bind_rows(mutate(stats_ela, ELA=TRUE), mutate(stats, ELA=FALSE)) |>
   select(model, metric, eff, ELA) |>
   arrange(model, metric, ELA) |> group_by(model) |>
-  mutate(eff_rel_unit=eff/mean(eff[metric=='unit' & ELA==TRUE]),
+  mutate(eff_rel=eff/mean(eff[metric=='unit' & ELA==FALSE]),
+    eff_rel_unit=eff/mean(eff[metric=='unit' & ELA==TRUE]),
          eff_rel_full=eff/mean(eff[metric!='unit' & ELA==FALSE]))
 g <- ggplot(filter(stats_tmp, metric!='unit' & ELA==TRUE), aes(model, y=eff_rel_full, color=metric)) +
   geom_hline(yintercept=1) +
@@ -251,3 +273,16 @@ g <- ggplot(filter(stats_tmp, metric!='unit' & ELA==TRUE), aes(model, y=eff_rel_
     labs(x=NULL, y='Efficiency relative to full SNUTS',
        color=NULL)
 ggsave('plots/case_studies_perf_ELA.png', g, width=4, height=3)
+
+g <- ggplot(filter(stats_tmp, metric=='unit' & ELA==TRUE), aes(model, y=eff_rel)) +
+  geom_hline(yintercept=1) +
+  geom_jitter(width=.1, height=0, alpha=.5) +
+  theme(axis.text.x = element_text(angle = 90, hjust=1, vjust=.5)) +
+  scale_y_log10() + #coord_flip()+
+  labs(x=NULL, y='Relative efficiency (ELA/full NUTS)',
+       color=NULL)
+ggsave('plots/case_studies_perf_ELA_unit.png', g, width=4, height=3.5)
+
+
+
+perf_long |> filter(model=='wham') |> group_by(metric) |> summarize(ess=mean(ess), time=mean(time.total)/(60*60)/3, eff=mean(eff))
