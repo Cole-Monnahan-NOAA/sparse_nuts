@@ -1,8 +1,36 @@
 source("code/startup.R")
 require(microbenchmark)
 library(Matrix)
-#detach(package:TMB)
+detach(package:TMB)
 library(RTMB)
+
+## benchmark the case studies for different metrics
+source('code/load_rtmb_objects.R')
+b_m <- benchmark_metrics
+bench.rtmb <- bind_rows(
+  b_m(obj.causal, model = 'causal'),
+  b_m(obj.diamonds, model = 'diamonds'),
+  b_m(obj.irt_2pl, model = 'irt_2pl'),
+  #b_m(obj.kilpisjarvi, model = 'kilpisjarvi')
+  b_m(obj.lynx, model = 'lynx'),
+  b_m(obj.radon, model = 'radon'),
+  b_m(obj.schools, model = 'schools')
+)
+source('code/load_tmb_objects.R')
+objs <- list(obj.gp_pois_regr, obj.petrel, obj.pollock, obj.salamanders, obj.sam, obj.sdmTMB, obj.simple, obj.swallows, obj.wham, obj.wildf)
+bench.tmb <-  objs |> lapply(b_m) |> bind_rows()
+bench <- rbind(bench.rtmb, bench.tmb)
+saveRDS(bench, file='results/bench_casestudies.RDS')
+
+bench <- readRDS(file='results/bench_casestudies.RDS') |>
+  group_by(model) |>
+  mutate(rel_gr=gr/gr[metric=='sparse'])
+filter(bench, metric %in% c('RTMBtape', 'sparse', 'sparse-J'))
+ggplot(bench, aes(x=model, y=rel_gr, group=metric, color=metric)) + geom_line() + scale_y_log10()
+ggplot(bench, aes(x=npar, y=gr, shape=metric, color=model)) + geom_point() +
+  scale_y_log10() + scale_x_log10()
+ggplot(bench, aes(x=metric, y=rel_gr, group=model,color=model)) + geom_line() +
+  scale_y_log10()
 
 ## benchmark gradient calcs externally to show the impact of
 ## sparsity on the joint grad
@@ -38,8 +66,10 @@ saveRDS(bench, 'results/bench_spde.RDS')
 
 
 # quick benchmark of metric gradient timings
-
-ndata <- seq(3,100, by=5)
+metrics <- c('RTMBtape-perm', 'unit', 'diag', 'sparse-Jnoperm',  'dense', 'sparse-perm-inefficient',
+             'sparse-perm-efficient')
+metrics <- c('unit', 'diag', 'dense', 'sparse-Jnoperm', 'sparse-perm-efficient', 'RTMBtape-perm')
+ndata <- seq(2,75, by=8)
 bench <- NULL
 for(n in ndata){
   print(n)
@@ -53,41 +83,31 @@ for(n in ndata){
   obj2 <- RTMB::MakeADFun(func = obj$env$data, parameters = obj$env$parList(),
                           map = obj$env$map, random = NULL, silent = TRUE,
                           DLL = obj$env$DLL)
-  for(type in c('original', 'simple')){
-    if(type=='simple') obj2$gr <- function(x) t(x)
-
-    runit <- adnuts:::.rotate_posterior('unit', obj2$fn, obj2$gr, Q, Qinv, mle)
-    rdiag <- adnuts:::.rotate_posterior('diag', obj2$fn, obj2$gr, Q, Qinv, mle)
-    rdense <- adnuts:::.rotate_posterior('dense', obj2$fn, obj2$gr, Q, Qinv, mle)
-    rsparse <- adnuts:::.rotate_posterior('sparse', obj2$fn, obj2$gr, Q, Qinv, mle)
-    # rauto <- adnuts:::.rotate_posterior('auto', obj2$fn, obj2$gr, Q, Qinv, mle)
-
-
-    xx <- microbenchmark(runit$gr2(runit$x.cur),
-                         rdiag$gr2(rdiag$x.cur),
-                         rdense$gr2(rdense$x.cur),
-                         rsparse$gr2(rsparse$x.cur),
-                         times=200, unit='s')
-    bench <- rbind(bench,
-                   data.frame(type=type,
-                              metric=c('unit', 'diag', 'dense', 'sparse'),
-                              ndata=n, nrepars=nrepars,
-                              time=summary(xx)$median))
+  for(type in c('original', 'simple')[2]){
+    if(type=='simple'){
+      obj2 <- RTMB::MakeADFun(func=function(pars) sum(pars$x^2), parameters=list(x=mle), silent=TRUE)
+    }
+    for(metric in metrics){
+      out <- adnuts:::.rotate_posterior(metric, obj2$fn, obj2$gr, Q, Qinv, mle, obj=obj2)
+      xx <- microbenchmark(grad=out$gr2(out$x.cur+rnorm(length(mle),sd=.1)),
+                           times=200, unit='ms')
+      bench <- rbind(bench, data.frame(type=type,
+                                       metric=metric,
+                                       ndata=n, nrepars=nrepars, time=summary(xx)$median))
+    }
 
   }
-  bench2 <- bench |> group_by(type, nrepars) |>
-    mutate(reltime=time/time[metric=='unit'])
-
-  g <- ggplot(bench2, aes(x=nrepars, y=time, color=metric)) +
-    geom_line() + geom_point() +
-    facet_wrap('type')+
-    scale_y_log10() + scale_x_log10()
-  print(g)
+  if(n>2){
+    bench2 <- bench |> group_by(type, nrepars) |> filter(type=='simple') |>
+      mutate(reltime=time/time[metric=='unit'])
+    g <- ggplot(bench2, aes(x=nrepars, y=time, color=metric)) +
+      geom_line() + geom_point() +
+      facet_wrap('type')+
+      scale_y_log10() + scale_x_log10()
+    print(g)
+  }
 }
 
-
-bench2 <- bench |> group_by(type, nrepars) |>
-  mutate(reltime=time/time[metric=='unit'])
 bench2 <- mutate(bench2, metric=metricf(metric),
                  type=factor(type,
                              levels=c('simple', 'original'),
@@ -98,6 +118,7 @@ g <- ggplot(bench2, aes(x=nrepars, y=reltime, color=metric)) +
        title='Benchmark for SPDE model') +
   facet_wrap('type', nrow=2, scales='free_y') + scale_y_log10() +
   scale_x_log10()
+g
 ggsave('plots/spde_gradient_bechmark.png', g, width=4, height=5, units='in')
 saveRDS(bench, 'results/bench_spde_rotation.RDS')
 

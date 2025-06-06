@@ -17,6 +17,38 @@ library(adnuts)
 library(here)
 theme_set(theme_bw())
 
+benchmark_metrics <- function(obj, metrics=NULL, model=NULL){
+  if(is.null(metrics)){
+    metrics <- c('unit', 'diag', 'dense', 'sparse', 'sparse-J', 'RTMBtape')
+    # if no RE, sparse won't work
+    if(length(obj$env$random)==0)  metrics <- c('unit', 'diag', 'dense')
+  }
+  if(obj$env$DLL!='RTMB'){
+    metrics <- metrics[-which(metrics=='RTMBtape')]
+  }
+  if(is.null(model))
+    model <- obj$env$DLL
+  message("optimizing...")
+  opt <- with(obj, nlminb(par, fn, gr))
+  Q <- sdreport(obj, getJointPrecision=TRUE)$jointPrecision
+  M <- solve(as.matrix(Q))
+  n <- nrow(Q)
+  res <- lapply(metrics, function(metric) {
+
+    out <- adnuts::sample_sparse_tmb(obj, rotation_only = TRUE,
+                                     metric=metric, Q=Q, Qinv=M, skip_optimization = TRUE)
+    rbind(data.frame(metric=metric, what='gr',
+                     time=summary(microbenchmark(out$gr2(out$x.cur+rnorm(n, sd=.1)), unit='ms', times=50))$median),
+          data.frame(metric=metric, what='fn',
+                     time=summary(microbenchmark(out$fn2(out$x.cur+rnorm(n, sd=.1)), unit='ms', times=50))$median))
+  })
+  res <- do.call(rbind, res) |> tidyr::pivot_wider(id_cols=metric, names_from = what, values_from = time)
+  pct.sparsity <- round(100*mean(Q[lower.tri(Q)] == 0),2)
+  res <- cbind(res, npar=length(obj$env$last.par.best), pct.sparsity=pct.sparsity, model=model)
+  res
+}
+
+
 metricf2 <- function(x){
   lvl <- c('unit', 'diag', 'dense', 'sparse')
   labs <- lvl
