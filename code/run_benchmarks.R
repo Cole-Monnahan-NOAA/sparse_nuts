@@ -24,13 +24,12 @@ saveRDS(bench, file='results/bench_casestudies.RDS')
 
 bench <- readRDS(file='results/bench_casestudies.RDS') |>
   group_by(model) |>
-  mutate(rel_gr=gr/gr[metric=='sparse'])
-filter(bench, metric %in% c('RTMBtape', 'sparse', 'sparse-J'))
-ggplot(bench, aes(x=model, y=rel_gr, group=metric, color=metric)) + geom_line() + scale_y_log10()
-ggplot(bench, aes(x=npar, y=gr, shape=metric, color=model)) + geom_point() +
-  scale_y_log10() + scale_x_log10()
-ggplot(bench, aes(x=metric, y=rel_gr, group=model,color=model)) + geom_line() +
-  scale_y_log10()
+  mutate(rel_gr=gr/gr[metric=='unit'])
+bench_wide <- select(bench, model, pct.sparsity, npar, metric, rel_gr) |>
+  tidyr::pivot_wider(names_from='metric', values_from='rel_gr')
+write.csv(bench_wide, file='results/bench_casestudies_table.csv', row.names=FALSE)
+
+
 
 ## benchmark gradient calcs externally to show the impact of
 ## sparsity on the joint grad
@@ -63,13 +62,23 @@ for(n in ndata){
 }
 bench <- rbind(bench.sparse, bench.dense)
 saveRDS(bench, 'results/bench_spde.RDS')
+bench_spde <- readRDS('results/bench_spde.RDS') |>
+  group_by(nrepars) |>
+  mutate(reltime=time[model=='dense']/time)
+g <- ggplot(filter(bench_spde, model=='sparse'),
+            aes(nrepars, reltime, color=NULL))  + geom_line() +
+  geom_point() +
+  scale_x_log10() + scale_y_log10() +
+  labs(x='Number of spatial random effects',
+       y='Sparse:dense\ngradient evaluation',
+       color=NULL) +
+  theme(legend.position.inside=c(.2,.8), legend.position='inside')
+ggsave('plots/bench_spde.png', g, width=3.5, height=2.5)
 
 
-# quick benchmark of metric gradient timings
-metrics <- c('RTMBtape-perm', 'unit', 'diag', 'sparse-Jnoperm',  'dense', 'sparse-perm-inefficient',
-             'sparse-perm-efficient')
-metrics <- c('unit', 'diag', 'dense', 'sparse-Jnoperm', 'sparse-perm-efficient', 'RTMBtape-perm')
-ndata <- seq(2,75, by=8)
+# quick benchmark of metric gradient timings on a simplified model, isolating rotation costs vs model + rotation gradient costs
+metrics <- c('unit', 'diag', 'dense', 'sparse-J', 'sparse', 'RTMBtape')
+ndata <- floor(c(2:5,7,9, seq(10,100, len=10)))
 bench <- NULL
 for(n in ndata){
   print(n)
@@ -83,9 +92,9 @@ for(n in ndata){
   obj2 <- RTMB::MakeADFun(func = obj$env$data, parameters = obj$env$parList(),
                           map = obj$env$map, random = NULL, silent = TRUE,
                           DLL = obj$env$DLL)
-  for(type in c('original', 'simple')[2]){
+  for(type in c('original', 'simple')){
     if(type=='simple'){
-      obj2 <- RTMB::MakeADFun(func=function(pars) sum(pars$x^2), parameters=list(x=mle), silent=TRUE)
+      obj2 <- RTMB::MakeADFun(func=function(pars) sum(pars$x), parameters=list(x=mle), silent=TRUE)
     }
     for(metric in metrics){
       out <- adnuts:::.rotate_posterior(metric, obj2$fn, obj2$gr, Q, Qinv, mle, obj=obj2)
@@ -108,19 +117,24 @@ for(n in ndata){
   }
 }
 
-bench2 <- mutate(bench2, metric=metricf(metric),
-                 type=factor(type,
-                             levels=c('simple', 'original'),
-                             labels = c('Rotation only', 'Rotation and model gradient')))
-g <- ggplot(bench2, aes(x=nrepars, y=reltime, color=metric)) +
+bench_spde_gr <- bench |> group_by(type, nrepars) |>
+  mutate(reltime=time/time[metric=='unit']) |>
+  mutate(type=factor(type,
+                     levels=c('simple', 'original'),
+                     labels = c('Rotation only', 'Rotation and model gradient')))
+g <- ggplot(bench_spde_gr, aes(x=nrepars, y=reltime, color=metric)) +
   geom_line(linewidth=1, alpha=.8) + #geom_point() +
   labs(y='Time for gradient relative to unit', x='Number of random effects',
        title='Benchmark for SPDE model') +
   facet_wrap('type', nrow=2, scales='free_y') + scale_y_log10() +
   scale_x_log10()
-g
-ggsave('plots/spde_gradient_bechmark.png', g, width=4, height=5, units='in')
-saveRDS(bench, 'results/bench_spde_rotation.RDS')
-
-# FYI I've modified my code to default to an "auto" metric which uses an algorithm to determine which one to use before starting sampling, including a test for which gradient calc is more expensive. As such it tends to select "dense" at lower dimensions and "sparse" at higher when there are meaningful correlations (and select 'diag' when not). 
-# Here's the current benchmark output for a SPDE Poisson simulation model:It's nice to see the blue line flatten out which is the main benefit of using a sparse metric. We can decorrelate the posterior with very little overhead. If we could get the earlier part to befaster with this way that would be great.
+ggsave('plots/spde_gradient_bechmark_all.png', g, width=5.5, height=5, units='in')
+g <- ggplot(filter(bench_spde_gr, metric %in% c('diag', 'dense', 'sparse')),
+            aes(x=nrepars, y=reltime, color=metricf(metric))) +
+  geom_line(linewidth=1, alpha=.8) + #geom_point() +
+  labs(y='Time for gradient relative to none', x='Number of random effects',
+       title='Benchmark for SPDE model') +
+  facet_wrap('type', nrow=2, scales='free_y') + scale_y_log10() +
+  scale_x_log10() + labs(color='metric')
+ggsave('plots/spde_gradient_bechmark.png', g, width=4.5, height=3, units='in')
+saveRDS(bench_spde_gr, 'results/bench_spde_gr.RDS')
