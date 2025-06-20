@@ -17,38 +17,37 @@ f <- function(pars){
   return(-lp)                           # TMB uses negative lp
 }
 obj <- MakeADFun(func=f, parameters=pars, random='eta', silent=TRUE)
-#optimize and get Q and M=Q^(-1)
+# Optimize and get Q via sdreport function
 opt <- with(obj, nlminb(par,fn,gr))
-# ask TMB to return Q from sdreport
 sdrep <- sdreport(obj, getJointPrecision=TRUE)
 
 
 
 # This code block reproduces the 'sdreport' functionality in a
-# minimal way and only for RTMB models. It is meant only as a
-# demonstration for the model above (schools).
+# minimal way (see equations 9-10) and only for RTMB models. It
+# is meant only as a demonstration for the model above (schools).
 library(Matrix)
-par <- obj$env$last.par.best
-par.fixed <- opt$par
-r <- obj$env$random
-nonr <- setdiff(seq_along(par), r)
-hessian.fixed <- optimHess(par.fixed, obj$fn, obj$gr)
-hessian.random <- obj$env$spHess(par, random = TRUE)
-#obj$env$f(par, order = 0, type = "ADGrad") ## NOTE_2: ADGrad forward sweep now initialized !
-tmp <- obj$env$f(par, order = 1, type = "ADGrad", keepx=nonr, keepy=r) ## TMBad only !!!
-A <- solve(hessian.random, tmp)
-G <- as.matrix(hessian.random %*% A)
-M1 <- cbind2(hessian.random, G)
-M2 <- cbind2(t(G), as.matrix(t(A) %*% G) + hessian.fixed)
-M <- rbind2(M1, M2)
-M <- forceSymmetric(M, uplo = "L")
-p <- invPerm(c(r, (1:length(par))[-r]))
-# the joint precision Q
-Q <- M[p, p]
-class(Q) # dsCMatrix from Matrix package
-Matrix::image(Q)
+q_hat <- obj$env$last.par.best # joint mode
+theta_hat <- opt$par          # marginal mode
+r <- obj$env$random           # index of random effects
+nonr <- setdiff(seq_along(q_hat), r)
+n <- length(q_hat)
+# Hessian of marginal posterior
+H_Bhat <- optimHess(theta_hat, obj$fn, obj$gr)
+# Hessian of random effects
+H_AA <- obj$env$spHess(obj$env$last.par.best, random = TRUE)
+# Partial derivatives of the joint posterior at the
+H_AB <- obj$env$f(q_hat, order = 1, type = "ADGrad", keepx=nonr, keepy=r) ## TMBad only !!!
+H_BA <- t(H_AB)
+# Hessian block for fixed effects
+H_BB <- H_BA %*% solve(t(H_AA)) %*% H_AB + H_Bhat
+Q <- Matrix(0, nrow = n, ncol=n, sparse=TRUE)
+Q[r,r] <- H_AA
+Q[r,nonr] <- H_AB
+Q[nonr,r] <- H_BA
+Q[nonr, nonr] <- H_BB
 # this matches sdreport
-max(abs((Q-sdrep$jointPrecision)))
+max(abs((Q-sdrep$jointPrecision))) # [1] 2.775558e-17
 
 
 # now use Q to transform the system (the sparse metric). Let 'x'
