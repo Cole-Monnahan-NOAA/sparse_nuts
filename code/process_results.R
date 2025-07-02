@@ -9,38 +9,42 @@ skip.models <- c(skip.models, paste0(skip.models, '_ELA'))
 stats_sim <- bind_rows(readRDS('results/spde_stats.RDS'),
                        readRDS('results/VAR_stats.RDS'),
                        readRDS("results/glmmTMB_stats.RDS")) |>
-  group_by(model, metric, nrepars) |> #summarize(n=n()) |> print(n=Inf)
-  filter(! (model=='VAR' & nrepars <205)) |> mutate(metric2=metricf2(metric)) |>
+ # group_by(model, metric, nrepars) |> #summarize(n=n()) |> print(n=Inf)
+  filter(! (model=='VAR' & nrepars <205)) |>
   ungroup()
 
 perf_sim <- stats_sim |>
+  group_by(model, metric, nrepars)  |>
+  # mean across replicates for each metric
   mutate(eff_avg=mean(eff),
          ess_avg=mean(ess),
          time.total=time.warmup+time.sampling,
          time_avg=mean(time.total)) |> ungroup() |>
   pivot_longer(cols=c('eff_avg', 'ess_avg', 'time_avg')) |>
+  # relative to unit metric
   group_by(model, nrepars) |>
   mutate(relval=value/value[as.character(metric)=='unit']) |> ungroup() |>
-  mutate(name2=factor(name, levels=c('time_avg', 'ess_avg', 'eff_avg'),
+  mutate(metricf=metricf(metric),
+         name2=factor(name, levels=c('time_avg', 'ess_avg', 'eff_avg'),
                       labels=c('Total time', 'min(ESS)', 'Efficiency (ESS/s)')))
 
-#, rel_eff=eff/eff_avg[as.character(metric)=='unit'])
-g <- ggplot(filter(perf_sim, metric!='unit'),
-            aes(x=nrepars, y=relval, color=metric)) +
-  facet_grid(name2~model, scales='free') + geom_point() + geom_line()+
-  scale_x_log10() + scale_y_log10() +
-  labs(x='Number of random effects',
-       y="Mean value relative to metric 'unit'",
-       color=NULL) +
-  geom_hline(yintercept = 1)
-g
-ggsave('plots/perf_sim_rel.png', g, width=7, height=5)
+# #, rel_eff=eff/eff_avg[as.character(metric)=='unit'])
+# g <- ggplot(filter(perf_sim, metric!='unit'),
+#             aes(x=nrepars, y=relval, color=metric)) +
+#   facet_grid(name2~model, scales='free') + geom_point() + geom_line()+
+#   scale_x_log10() + scale_y_log10() +
+#   labs(x='Number of random effects',
+#        y="Mean value relative to metric 'unit'",
+#        color=NULL) +
+#   geom_hline(yintercept = 1)
+# g
+# ggsave('plots/perf_sim_rel.png', g, width=7, height=5)
 
-g <- ggplot(perf_sim, aes(x=nrepars, y=value, color=metric)) +
+g <- ggplot(perf_sim, aes(x=nrepars, y=value, color=metricf)) +
   facet_grid(name2~model, scales='free') + geom_point() + geom_line()+
   scale_x_log10() + scale_y_log10() +
   labs(x='Number of random effects',
-       y=NULL)
+       y=NULL, color=NULL)
 ggsave('plots/perf_sim.png', g, width=7, height=4)
 
 
@@ -57,6 +61,52 @@ mods <- sapply(results, \(x) x[[1]]$model)
 ela <- grepl('_ELA', mods)
 results_ela <- results[ela]
 results <- results[!ela]
+
+cors <- lapply(results, get_cors) |> bind_rows() |>filter(replicate==1 & metric=='Stan default')
+vars <- lapply(results, get_vars) |> bind_rows() |>filter(replicate==1 & metric=='Stan default')
+g1 <- ggplot(vars, aes(post.sd, marginal.sd, color=model)) +
+  geom_abline(intercept=0, slope=1)+geom_point(size=1) +
+  scale_y_log10()+scale_x_log10() +
+  theme(legend.position='none')  +
+  labs(x='Posterior SD', y='Approximate SD (Q)')
+#cors2 <- group_by(cors, model) |> slice_sample(n=1)
+g2 <- ggplot(cors, aes(post.cor, mle.cor, color=model)) +
+  geom_abline(intercept=0, slope=1)+geom_point(size=1) +
+  labs(x='Posterior correlation', y='Approximate correlation (Q)', color=NULL) +
+    guides(color = guide_legend(ncol = 2)) +
+  theme(legend.key.spacing.y = unit(0, "cm"))+
+  xlim(-1,1) + ylim(-1,1)
+g <- cowplot::plot_grid(g1,g2, rel_widths = c(1,1.9),
+                        labels=c('(a)', '(b)'),
+                        label_size = 12)
+ggsave('plots/post_vs_Q.png', g, width=8, height=2.75, units='in', dpi=300)
+
+# get ESS changes with NUTS to SNUTS
+ess_results <- lapply(results,
+        function(x) {
+          mon <- get_mon(x)
+          stats <- get_stats(x) |> mutate(metric=metricf(metric))
+          out <- merge(x=mon, y=stats, by=c('model', 'replicate', 'metric'), all.x=TRUE)
+          select(mutate(out, eff=ESS/time.total), model, metric=metric,
+               replicate, par, partype, ESS, time.total, eff)})|>
+                    bind_rows() |>
+ mutate(SNUTS=ifelse(as.character(metric)=='Stan default', 'NUTS', 'SNUTS'))
+g <- ggplot(ess_results,
+             aes(SNUTS, y=eff, color=partype,
+                 group=interaction(par,replicate))) +
+  geom_line(alpha=.25) + geom_jitter(width=.05)+
+  theme(legend.position = 'top')+
+  facet_wrap('model') + scale_y_log10()+
+  labs(x=NULL, y='Efficiency (ESS/t)', color=NULL)
+ggsave("plots/essf_nuts_snuts_all.png", g, width=6, height=6)
+g <- ggplot(ess_results,
+            aes(SNUTS, y=ESS, color=partype,
+                group=interaction(par,replicate))) +
+  geom_line(alpha=.25) + geom_jitter(width=.05)+
+  theme(legend.position = 'top')+
+  facet_wrap('model') + scale_y_log10()+
+  labs(x=NULL, y='Effective sample size (ESS)', color=NULL)
+ggsave("plots/ess_nuts_snuts_all.png", g, width=6, height=6)
 
 message("Creating reference posterior list...")
 ref_posts_list <- lapply(results, \(mod) {
@@ -90,7 +140,7 @@ stats <- lapply(results, get_stats) |> bind_rows() |>
   ungroup() |>
   arrange(desc(mean_rel_eff)) |>
   mutate(model=factor(model, levels=unique(model)),
-         metric2=metricf2(metric))
+         metricf=metricf(metric))
 # g1 <- ggplot(stats, aes(x=model, y=rel_time, color=metric)) +
 #   geom_jitter(width=.1, height=0) +
 #   theme(axis.text.x = element_text(angle = 90)) +
@@ -113,31 +163,32 @@ stats <- lapply(results, get_stats) |> bind_rows() |>
 
 
 perf_long <- stats |> pivot_longer(cols=c('rel_ess', 'rel_time', 'rel_eff')) |>
-  mutate(pre_metric=metricf2(metric),
+  mutate(pre_metric=metricf(metric),
          name2=factor(name, levels=c('rel_time', 'rel_ess', 'rel_eff'),
                       labels=c('Time', 'min ESS', 'Efficiency (ESS/s)')))
 g <- ggplot(perf_long, aes(x=model, y=value, color=pre_metric)) +
   geom_hline(yintercept=1) +
   geom_jitter(width=.1, height=0, alpha=.5) +
   theme(axis.text.x = element_text(angle = 90, hjust=1, vjust=.5)) +
+  theme(legend.position='top')+
   scale_y_log10() + #coord_flip()+
-  facet_wrap('name2', ncol=1, scales='free_y') +
-  labs(x=NULL, y='Value relative to no pre-metric',
+  facet_wrap('name2', ncol=3, scales='free_y') +
+  labs(x=NULL, y='Value relative to Stan defaults',
        color=NULL)
-ggsave('plots/case_studies_perf_rel.png', g, width=4, height=6)
+ggsave('plots/perf_mods.png', g, width=7, height=3)
 
-g <- ggplot(filter(perf_long, name=='rel_eff'),
-            aes(x=model, y=value, color=pre_metric)) +
-  geom_hline(yintercept=1) +
-  geom_jitter(width=.1, height=0, alpha=.5) +
-  theme(axis.text.x = element_text(angle = 90, hjust=1, vjust=.5),
-        legend.position = 'inside', legend.position.inside = c(.9,.7)) +
-  scale_y_log10() + #coord_flip()+
-  facet_wrap('name2', ncol=1, scales='free_y') +
-  labs(x=NULL, y='Value relative to no pre-metric',
-       color=NULL)
-g
-ggsave('plots/case_studies_eff_rel.png', g, width=5, height=3.5)
+# g <- ggplot(filter(perf_long, name=='rel_eff'),
+#             aes(x=model, y=value, color=pre_metric)) +
+#   geom_hline(yintercept=1) +
+#   geom_jitter(width=.1, height=0, alpha=.5) +
+#   theme(axis.text.x = element_text(angle = 90, hjust=1, vjust=.5),
+#         legend.position = 'inside', legend.position.inside = c(.9,.7)) +
+#   scale_y_log10() + #coord_flip()+
+#   facet_wrap('name2', ncol=1, scales='free_y') +
+#   labs(x=NULL, y='Value relative to no pre-metric',
+#        color=NULL)
+# g
+# ggsave('plots/case_studies_eff_rel.png', g, width=5, height=3.5)
 
 
 filter(perf_long, model=='wildf_adapted' & replicate==1) |> select(mean_rel_eff)
@@ -155,6 +206,7 @@ g <- ggplot(stats_long, aes(model, y=value, color=metric)) +
 ggsave('plots/case_studies_stats.png', g, width=4, height=6)
 
 grad_timings <- stats |>
+  #each metric has it's own gr and gr2, so don't need unit here
   filter(metric!='unit') |>
   group_by(model) |>
   summarize(metric=metric[1],
@@ -246,6 +298,8 @@ ggsave('plots/warmup.png',g, width=8, height=8)
 # for full integration
 stats_ela <- lapply(results_ela, get_stats) |> bind_rows() |>
   mutate(model=gsub('_ELA', '', model)) |>
+  # stupid typo in model name for ELA, quick fix here for now
+  mutate(model=ifelse(model=='sdmbTMB', 'sdmTMB', model)) |>
   filter(!model %in% c('glmmTMB', 'VAR', 'spde', 'wildf2', 'wildf3')) |>
   group_by(model) |>
   mutate(rel_eff=eff/mean(eff[metric=='unit']),
@@ -255,33 +309,32 @@ stats_ela <- lapply(results_ela, get_stats) |> bind_rows() |>
          mean_rel_eff=mean(rel_eff)) |>
   ungroup() |>
   arrange(desc(mean_rel_eff)) |>
-  mutate(model=factor(model, levels=unique(model)),
-         metric2=metricf2(metric))
+  mutate(model=factor(model, levels=unique(model)))
 
 
+# very carefully massage output to plot for two scenariors: NUTS and SNUTS
 stats_tmp <- bind_rows(mutate(stats_ela, ELA=TRUE), mutate(stats, ELA=FALSE)) |>
   select(model, metric, eff, ELA) |>
   arrange(model, metric, ELA) |> group_by(model) |>
   mutate(eff_rel=eff/mean(eff[metric=='unit' & ELA==FALSE]),
     eff_rel_unit=eff/mean(eff[metric=='unit' & ELA==TRUE]),
-         eff_rel_full=eff/mean(eff[metric!='unit' & ELA==FALSE]))
-g <- ggplot(filter(stats_tmp, metric!='unit' & ELA==TRUE), aes(model, y=eff_rel_full, color=metric)) +
+         eff_rel_full=eff/mean(eff[metric!='unit' & ELA==FALSE])) |>
+  filter(ELA==TRUE) |> ungroup()
+# this one is efficiency of ELA:full with both using 'unit'
+# metric so comparable to previous studies
+x1 <- filter(stats_tmp, metric=='unit') |> mutate(y=eff_rel, type='NUTS')
+# now look at ELA:full using SNUTS 'auto' for both
+x2 <- filter(stats_tmp, metric!='unit') |> mutate(y=eff_rel_full, type='SNUTS')
+xx <- bind_rows(x1,x2) |> ungroup() |> mutate(modelf=modelf(model), metricf=metricf(metric))
+g <- ggplot(xx, aes(modelf, y=y, color=metricf, shape=type)) +
   geom_hline(yintercept=1) +
-  geom_jitter(width=.1, height=0, alpha=.5) +
+  geom_jitter(width=.1, height=0, alpha=.7) +
   theme(axis.text.x = element_text(angle = 90, hjust=1, vjust=.5)) +
   scale_y_log10() + #coord_flip()+
-    labs(x=NULL, y='Efficiency relative to full SNUTS',
-       color=NULL)
-ggsave('plots/case_studies_perf_ELA.png', g, width=4, height=3)
-
-g <- ggplot(filter(stats_tmp, metric=='unit' & ELA==TRUE), aes(model, y=eff_rel)) +
-  geom_hline(yintercept=1) +
-  geom_jitter(width=.1, height=0, alpha=.5) +
-  theme(axis.text.x = element_text(angle = 90, hjust=1, vjust=.5)) +
-  scale_y_log10() + #coord_flip()+
-  labs(x=NULL, y='Relative efficiency (ELA/full NUTS)',
-       color=NULL)
-ggsave('plots/case_studies_perf_ELA_unit.png', g, width=4, height=3.5)
+  labs(x=NULL, y='Relative Efficiency (ELA/full NUTS)',
+       color=NULL, shape=NULL)+
+  theme(legend.position='top')
+ggsave('plots/perf_ELA.png', g, width=4.5, height=3)
 
 
 

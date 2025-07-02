@@ -1,3 +1,4 @@
+source(here::here('code/startup.R'))
 source('code/load_TMB_objects.R')
 
 ## Warmup tests. Run 10 independent chains with warmup=1000 for
@@ -12,6 +13,11 @@ warmups.pollock <- fit_warmups(obj.pollock, init='last.par.best')
 warmups.wildf <- fit_warmups(obj.wildf, init='last.par.best')
 warmups.swallows <- fit_warmups(obj.swallows, init='last.par.best')
 warmups.dlm <- fit_warmups(obj.dlm, model='dlm')
+warmups.wham <- fit_warmups(obj.wham, init='last.par.best')
+warmups.sam <- fit_warmups(obj.sam, init='last.par.best')
+warmups.petrel <- fit_warmups(obj.petrel, init='last.par.best')
+warmups.gp_pois_regr <- fit_warmups(obj.gp_pois_regr)
+warmups.salamanders <- fit_warmups(obj.salamanders)
 
 source('code/load_RTMB_objects.R')
 ## Warmup tests. Run 10 independent chains with warmup=1000 for
@@ -27,3 +33,4 @@ warmups.kilpisjarvi <- fit_warmups(obj.kilpisjarvi, model='kilpisjarvi')
 warmups.causal <- fit_warmups(obj.causal, model='causal', init='last.par.best')
 warmups.irt_2pl <- fit_warmups(obj.irt_2pl, model='irt_2pl', init='last.par.best')
 warmups.irt_2pl_nc <- fit_warmups(obj.irt_2pl_nc, model='irt_2pl_nc', init='last.par.best')
+warmups.lynx <- fit_warmups(obj.radon, model='lynx')

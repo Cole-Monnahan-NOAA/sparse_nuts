@@ -6,7 +6,7 @@ library(adnuts)
 setwd(here::here())
 source(here::here('code/startup.R'))
 
-metrics <- c('unit', 'diag', 'dense', 'sparse', 'RTMBtape',  'sparse-J')
+metrics <- c('unit', 'diag', 'dense', 'sparse',  'sparse-J')
 
 source('code/load_rtmb_objects.R')
 # First on a known simple example
@@ -23,7 +23,7 @@ func(pars)
 obj <- MakeADFun(func, parameters = pars, random='xmvn')
 obj$fn()
 opt <- with(obj, nlminb(par, fn, gr))
-thin <- 10
+thin <- 2
 iter <- 4100*thin
 wm <- thin*100
 fits <- fit_models(obj, warmup=wm, iter=iter, replicates=1,

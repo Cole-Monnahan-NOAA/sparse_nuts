@@ -48,7 +48,7 @@ fits.sdmTMB_ELA <- fit_models(obj.sdmTMB, iter=2000,
                           control=list(adapt_delta=.9),
                           cpus=cpus, replicates=reps,
                           laplace=TRUE,
-                          model='sdmbTMB_ELA')
+                          model='sdmTMB_ELA')
 # fits.pollock_ELA <- fit_models(obj.pollock, iter=2000,
 #                            cpus=cpus, replicates=reps,
 #                            model='pollock_ELA', laplace=TRUE)

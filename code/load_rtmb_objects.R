@@ -1,5 +1,6 @@
 setwd(here())
 
+if('hmmTMB' %in% .packages()) detach(package:hmmTMB)
 if('TMB' %in% .packages()) detach(package:TMB)
 
 library(RTMB)

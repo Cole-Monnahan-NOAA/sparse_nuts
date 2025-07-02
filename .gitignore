@@ -5,3 +5,4 @@ fits*.RDS
 results/*.RDS
 results/warmups/*.RDS
 *.Rhistory
+results/pathfinder/*.RDS
