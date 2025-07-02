@@ -17,9 +17,48 @@ library(adnuts)
 library(here)
 theme_set(theme_bw())
 
-metricf2 <- function(x){
+#' Make a factor of model names sorted alphabetically (for plotting)
+modelf <- function(x){
+  labs <- sort(unique(as.character(x)))
+  factor(x, levels=labs)
+}
+
+benchmark_metrics <- function(obj, metrics=NULL, model=NULL){
+  if(is.null(metrics)){
+    metrics <- c('unit', 'diag', 'dense', 'sparse',  'sparse-J')
+    # if no RE, sparse won't work
+    if(length(obj$env$random)==0)  metrics <- c('unit', 'diag', 'dense')
+  }
+  # if(obj$env$DLL!='RTMB'){
+  #   metrics <- metrics[-which(metrics=='RTMBtape')]
+  # }
+  if(is.null(model))
+    model <- obj$env$DLL
+  message("optimizing model ", model, "...")
+  opt <- with(obj, nlminb(par, fn, gr))
+  Q <- sdreport(obj, getJointPrecision=TRUE)$jointPrecision
+  M <- solve(as.matrix(Q))
+  n <- nrow(Q)
+  res <- lapply(metrics, function(metric) {
+
+    out <- adnuts::sample_sparse_tmb(obj, rotation_only = TRUE,
+                                     metric=metric, Q=Q, Qinv=M, skip_optimization = TRUE)
+    rbind(data.frame(metric=metric, what='gr',
+                     time=summary(microbenchmark(out$gr2(out$x.cur+rnorm(n, sd=.1)), unit='ms', times=100))$median),
+          data.frame(metric=metric, what='fn',
+                     time=summary(microbenchmark(out$fn2(out$x.cur+rnorm(n, sd=.1)), unit='ms', times=100))$median))
+  })
+  res <- do.call(rbind, res) |> tidyr::pivot_wider(id_cols=metric, names_from = what, values_from = time)
+  pct.sparsity <- round(100*mean(Q[lower.tri(Q)] == 0),2)
+  res <- cbind(res, npar=length(obj$env$last.par.best), pct.sparsity=pct.sparsity, model=model)
+  res
+}
+
+
+metricf <- function(x){
   lvl <- c('unit', 'diag', 'dense', 'sparse')
-  labs <- paste0(lvl, 'Q')
+  labs <- lvl
+  labs[1] <- 'Stan default'
   factor(x, levels=lvl, labels=labs)
 }
 
@@ -72,7 +111,7 @@ fit_models<- function(obj,  iter, warmup=NULL, chains=4,
         control2$metric <- 'unit_e'
         control2$adapt_init_buffer <- 25
         control2$adapt_term_buffer <- 75
-        control2$adapt_window <- 50
+        control2$adapt_window <- 0
       }
       fit <- sample_sparse_tmb(obj, iter=iter, warmup=wm,
                                chains=chains, cores=cores,
@@ -181,6 +220,23 @@ get_maxcors <- function(fits){
   x
 }
 
+
+get_cors <- function(fits){
+  x <- lapply(fits, function(fit){
+    post <- as.data.frame(fit)
+    post.cor <- cor(post)
+    post.cor <- as.numeric(post.cor[lower.tri(post.cor)])
+    mle.cor <- cov2cor(fit$mle$Qinv)
+    mle.cor <- as.numeric(mle.cor[lower.tri(mle.cor)])
+    data.frame(model=fit$model, replicate=fit$replicate,
+               post.cor=post.cor, mle.cor=mle.cor,
+               metric=fit$metric)
+  })
+  x <- do.call(rbind,x) %>% mutate(metric=metricf(metric))
+  x
+}
+
+
 get_vars <- function(fits){
   x <- lapply(fits, function(fit){
     post <- as.data.frame(fit)
@@ -190,7 +246,7 @@ get_vars <- function(fits){
     eff <- ess/sum(fit$time.total + fit$time.Q + fit$time.Qinv)
     data.frame(model=fit$model, replicate=fit$replicate,
                metric=fit$metric, par=fit$par_names,
-               ess=ess, marginal.sd=mle.sd, eff=eff)
+               ess=ess, marginal.sd=mle.sd, post.sd=post.sd, eff=eff)
   })
   x <- do.call(rbind,x) %>% mutate(metric=metricf(metric))
   x
@@ -204,7 +260,7 @@ get_stats <- function(fits){
     time.total <- sum(fit$time.total + fit$time.Q + fit$time.Qinv)
     eff <- ess/time.total
     sp <- extract_sampler_params(fit)
-    data.frame(model=fit$model, metric=metricf(fit$metric), replicate=fit$replicate, ess=ess,
+    data.frame(model=fit$model, metric=fit$metric, replicate=fit$replicate, ess=ess,
                rhat=rhat, eff=eff, #time.total=time.total,
                gr=fit$time.gr,
                time.Qall=fit$time.Q +fit$time.Qinv + fit$time.opt,
@@ -255,7 +311,6 @@ plot_timings <- function(fits){
   return(list(g1,g2))
 }
 
-metricf <- function(x) factor(x, levels=c('unit', 'diag', 'dense', 'sparse'))
 plot_stats <- function(fits){
   stats <- get_stats(fits) %>% select(-rhat, -gr) %>%
     pivot_longer(c(-replicate, -model, -metric)) %>%
@@ -438,16 +493,6 @@ sim_spde_dat <- function(n, sparse=TRUE, map=NULL){
   return(obj)
 }
 
-#' Make an image plot showing the correlation (lower triangle)
-#' and sparsity (upper triangle).
-plot_Q <- function(fit){
-  nn <- length(fit$par_names)
-  corr <- cov2cor(fit$mle$Qinv)
-  Q <- fit$mle$Q
-  Q[Q!=0] <- 1e-10
-  Q[lower.tri(Q,TRUE)] <- corr[lower.tri(Q,TRUE)]
-  Matrix::image(Q, useRaster=TRUE, at=seq(-1,1, len=50))
-}
 
 
 
@@ -535,6 +580,7 @@ get_wasserstein <- function(reps, obj, post, model,
                         time.total=as.numeric(time.pf, 'secs'))
     out <- bind_rows(out, df.Q, df.pf)
   }
+  saveRDS(out, paste0('results/pathfinder/', model, '_pathfinder.RDS'))
   message("Done with wassersteine distance for model=", model)
   return(out)
 }

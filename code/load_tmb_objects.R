@@ -1,6 +1,7 @@
 ## this script loads the TMB (C++) models into the global
 ## workspace
 setwd(here())
+if('hmmTMB' %in% .packages()) detach(package:hmmTMB)
 if('TMB' %in% .packages()) detach(package:TMB)
 library(TMB)
 
@@ -46,4 +47,24 @@ setwd(here('models/gp_pois_regr'))
 obj.gp_pois_regr <- readRDS('obj.gp_pois_regr.RDS')
 dyn.load('gp_pois_regr')
 obj.gp_pois_regr$retape()
+setwd(here())
+
+
+library(hmmTMB)
+setwd(here('models/petrel'))
+obj.petrel <- readRDS('obj.petrel.RDS')
+obj.petrel$retape()
+setwd(here())
+
+library(wham)
+setwd(here('models/wham'))
+obj.wham <- readRDS('obj.wham.RDS')
+obj.wham$retape()
+setwd(here())
+
+
+library(stockassessment)
+setwd(here('models/sam'))
+obj.sam <- readRDS('obj.sam.RDS')
+obj.sam$retape()
 setwd(here())

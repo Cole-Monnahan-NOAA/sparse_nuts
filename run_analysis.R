@@ -9,12 +9,15 @@ setwd(here::here())
 source("code/startup.R")
 
 # ## Demo with simple
+# library(TMB)
+# library(adnuts)
 # TMB::runExample('simple')
-# ## TMB::runExample('ar1xar1')
-# fit.demo <- sample_sparse_tmb(obj, iter=500, warmup=100, init='random',
-#                               chains=2, cores=1, metric='sparse', seed=124)
-# launch_shinyadmb(fit.demo)
-
+# fit <- sample_sparse_tmb(obj)
+# launch_shinyadmb(fit)
+# pairs_admb(fit, pars=1:5, order='slow')
+# plot_marginals(fit, pars=1:5)
+# plot_sampler_params(fit)
+# plot_uncertainties(fit)
 
 
 ## Run benchmark and timings on spatial Poisson model.
