@@ -140,7 +140,7 @@ fit_models<- function(obj,  iter, warmup=NULL, chains=4,
 
 plot_output <- function(fits, do.pairs=FALSE){
   model <- fits[[1]]$model
-  pdf(paste0('plots/',model,'.pdf'), width=6, height=9)
+  pdf(paste0('plots/case_studies/',model,'.pdf'), width=6, height=9)
   plot_Q(fits[[1]])
   g <- plot_stats(fits)
   print(g)

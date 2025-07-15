@@ -9,6 +9,7 @@ fits.sdmTMB <- fit_models(obj.sdmTMB, iter=2000,
                           control=list(adapt_delta=.9),
                           cpus=cpus, replicates=reps)
 fits.pollock <- fit_models(obj.pollock, iter=2000,
+                           init='last.par.best',
                            cpus=cpus, replicates=reps)
 fits.wildf <- fit_models(obj.wildf, iter=2000, cpus=cpus,
                          init='last.par.best',
@@ -27,7 +28,6 @@ fits.dlm <- fit_models(obj.dlm, iter=2000, cpus=cpus,
 fits.salamanders <- fit_models(obj.salamanders, iter=2000, cpus=cpus,
                        replicates=reps, model='salamanders')
 fits.gp_pois_regr <- fit_models(obj.gp_pois_regr, iter=2000, cpus=cpus,
-                                warmup=1000,
                                replicates=reps, model='gp_pois_regr',
                                control=list(adapt_delta=.99))
 fits.petrel <- fit_models(obj.petrel, iter=2000, cpus=cpus,
@@ -119,7 +119,7 @@ fits.irt_2pl <- fit_models(obj.irt_2pl, iter=2000, cpus=cpus, replicates=reps,
                           globals=list(irt_2pl_dat=irt_2pl_dat),
                           control=list(adapt_delta=.9))
 fits.irt_2pl_nc <- fit_models(obj.irt_2pl_nc, iter=2000, cpus=cpus, replicates=reps,
-                           model='irt_2pl_nc', init='random',
+                           model='irt_2pl_nc', init='last.par.best',
                            globals=list(irt_2pl_dat=irt_2pl_dat),
                            control=list(adapt_delta=.9))
 fits.lynx <- fit_models(obj.lynx, replicates=reps, cpus=cpus,
