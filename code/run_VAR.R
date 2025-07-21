@@ -24,37 +24,14 @@ fit0 = dsem( sem = sem,
 parameters = fit0$obj$env$parList()
 parameters$lnsigma_j <- rep(log(.1),2)
 
-# initial fit to get good starting values
-fit0 = dsem( sem = sem,
-             family=family,
-             tsdata = data,
-             estimate_delta0 = FALSE,
-             control = dsem_control(
-               parameters=parameters,
-               quiet = FALSE,
-               run_model=TRUE,
-               map=map,
-               getsd = FALSE) )
-parameters = fit0$obj$env$parList()
-parameters$delta0_j = rep(0, ncol(data) )
 
-# Refit with delta0
-fit = dsem( sem = sem,
-            family=family,
-            tsdata = data,
-            estimate_delta0 = TRUE,
-            control = dsem_control( quiet=TRUE,
-                                    map=map,
-                                    parameters = parameters ) )
-parameters = fit$obj$env$parList()
-
-options(future.globals.maxSize= 5000*1024^2) # 1000 MB limit
+options(future.globals.maxSize= 5000*1024^2) # 5000 MB limit
 metrics <- c('unit', 'auto')
 stats <- list()
-for(nyrs in  c(100,250,375, 500, 750, 1500)){
+for(nyrs in  c(50,100,250,375, 500, 750, 1500,2500, 5000)){
   message("Starting analysis for nyrs=",nyrs)
   # pad NAs to build a long time-series of simulated data below
-  na_mat <- matrix(NA, nrow=nyrs-61, ncol=2)
+  na_mat <- matrix(NA, nrow=pmax(nyrs,nyrs-61), ncol=2)
   dattmp <- ts(rbind(data, na_mat))
   partmp <- parameters
   partmp$x_tj <- matrix(0, ncol=2, nrow=nrow(dattmp))
@@ -63,7 +40,7 @@ for(nyrs in  c(100,250,375, 500, 750, 1500)){
   fitsim = dsem( sem = sem,
                  family=family,
                  tsdata = dattmp,
-                 estimate_delta0 = TRUE,
+                 estimate_delta0 = FALSE,
                  control = dsem_control( quiet=TRUE,
                                          map=map,
                                          parameters = partmp ) )
@@ -73,7 +50,7 @@ for(nyrs in  c(100,250,375, 500, 750, 1500)){
                      resimulate_gmrf = TRUE)[[1]]
   # rebuild to get the data into the obj for MCMC sampling
   fitsim <- dsem(sem = sem, family=family, tsdata = datsim,
-                 estimate_delta0 = TRUE,
+                 estimate_delta0 = FALSE,
                  control = dsem_control(quiet=TRUE,
                                          map=map,
                                          parameters = partmp ) )

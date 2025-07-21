@@ -34,7 +34,7 @@ reps <- 1:3
 source('code/run_spde.R')
 
 ## increasing dimensionality of negative binomial regression
-cpus <- 3
+cpus <- 1
 reps <- 1:3
 source('code/run_glmmTMB.R')
 
