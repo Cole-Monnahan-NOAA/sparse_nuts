@@ -25,7 +25,7 @@ source("code/startup.R")
 
 ## Efficiency across a bivariate normal with varying marginal SDs and correlations
 cpus <- 3
-reps <- 1
+reps <- 1:3
 source("code/run_timings.R")
 
 ## increasing dimensionality of a SPDE object
