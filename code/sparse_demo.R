@@ -107,11 +107,11 @@ gr.y <- function(y){
 }
 # back transform parameters
 y.to.x <- function(y) as.numeric(Matrix::solve(Lt, y)[iperm])
-
 # test them out
 fn.y(y0perm)
 obj2$fn(x0)  # matches but for sign
 gr.y(y0perm) # gradient at joint mode is 0 for fixed effects only
+
 
 ## -------------------------------------------------------------
 # Now show how to link this through StanEstimators

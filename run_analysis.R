@@ -28,6 +28,9 @@ cpus <- 3
 reps <- 1:3
 source("code/run_timings.R")
 
+## SPDE benchmarking of gradient calls and memory usage
+source('code/run_benchmarks.R')
+
 ## increasing dimensionality of a SPDE object
 cpus <- 3
 reps <- 1:3
@@ -70,10 +73,11 @@ fits.wildf3 <- fit_models(obj.wildf, warmup=warmup, replicates=1, cpus=1,
 
 
 
+source("code/process_results.R")
+
 
 # Need posteriors for this so do it last
 source("code/run_pathfinder.R")
-
 
 
 
