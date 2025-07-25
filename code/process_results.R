@@ -2,66 +2,75 @@
 
 setwd(here::here())
 source("code/startup.R")
-
-skip.models <- c('ratios', 'ratio', 'RTMB', 'simple', 'wildf2', 'wildf3', 'wildf4', 'cors', 'cor')
+skip.models <- c('ratios', 'ratio', 'RTMB', 'simple', 'wildf2', 'wildf3', 'wildf4', 'cors', 'cor','VAR','glmmTMB')
 skip.models <- c(skip.models, paste0(skip.models, '_ELA'))
 
+
+
+message("Processing simulated results...")
 stats_sim <- bind_rows(readRDS('results/spde_stats.RDS'),
-                       readRDS('results/VAR_stats.RDS'),
+                       #readRDS('results/VAR_stats.RDS'),
                        readRDS("results/glmmTMB_stats.RDS")) |>
  # group_by(model, metric, nrepars) |> #summarize(n=n()) |> print(n=Inf)
   filter(! (model=='VAR' & nrepars <205)) |>
   ungroup()
 
 perf_sim <- stats_sim |>
-  group_by(model, metric, nrepars)  |>
-  # mean across replicates for each metric
+  mutate(alg=algf(metric),
+         time=time.warmup+time.sampling) |>
+  group_by(model, alg, nrepars)  |>
+  # mean across replicates for each algorithm
   mutate(eff_avg=mean(eff),
          ess_avg=mean(ess),
-         time.total=time.warmup+time.sampling,
-         time_avg=mean(time.total)) |> ungroup() |>
-  pivot_longer(cols=c('eff_avg', 'ess_avg', 'time_avg')) |>
+         time_avg=mean(time)) |> ungroup() |>
+  pivot_longer(cols=c('eff', 'ess', 'time')) |>
   # relative to unit metric
   group_by(model, nrepars) |>
-  mutate(relval=value/value[as.character(metric)=='unit']) |> ungroup() |>
-  mutate(metricf=metricf(metric),
-         name2=factor(name, levels=c('time_avg', 'ess_avg', 'eff_avg'),
-                      labels=c('Total time', 'min(ESS)', 'Efficiency (ESS/s)')))
-
-# #, rel_eff=eff/eff_avg[as.character(metric)=='unit'])
-# g <- ggplot(filter(perf_sim, metric!='unit'),
-#             aes(x=nrepars, y=relval, color=metric)) +
-#   facet_grid(name2~model, scales='free') + geom_point() + geom_line()+
-#   scale_x_log10() + scale_y_log10() +
-#   labs(x='Number of random effects',
-#        y="Mean value relative to metric 'unit'",
-#        color=NULL) +
-#   geom_hline(yintercept = 1)
-# g
-# ggsave('plots/perf_sim_rel.png', g, width=7, height=5)
-
-g <- ggplot(perf_sim, aes(x=nrepars, y=value, color=metricf)) +
-  facet_grid(name2~model, scales='free') + geom_point() + geom_line()+
+  mutate(relval=value/value[alg=='NUTS']) |> ungroup() |>
+  mutate(name2=factor(name, levels=c('time', 'ess', 'eff'),
+                      labels=c('Total time (s)', 'minimum ESS', 'Efficiency (ESS/s)')))
+g <- ggplot(perf_sim, aes(x=nrepars, y=value, color=alg, group=interaction(alg,replicate))) +
+  facet_grid(name2~model, scales='free') + geom_point() +
+  geom_line()+
   scale_x_log10() + scale_y_log10() +
   labs(x='Number of random effects',
-       y=NULL, color=NULL)
-ggsave('plots/perf_sim.png', g, width=7, height=4)
+       y=NULL, color=NULL) +
+  guides(col=guide_legend(nrow=1))+
+   theme(legend.position = 'inside', legend.position.inside = c(.25,.4))
+ggsave('plots/perf_sim.png', g, width=5, height=4.2)
 
 
-stats_sim |> str()
+group_by(perf_sim, model) |>
+  filter(nrepars==max(nrepars) & replicate==1 & alg=='SNUTS') |>
+  select(model, nrepars, alg, name2, relval)
 
 
 
+
+message("Starting case studies...")
 message("Reading in large case study fit files...")
 xx <- list.files('results',  pattern='_fits.RDS', full.names = TRUE)
 xx <- xx[!xx %in% paste0('results/',skip.models,'_fits.RDS')]
 results <- xx |> lapply(readRDS)
 mods <- sapply(results, \(x) x[[1]]$model)
-
 ela <- grepl('_ELA', mods)
 results_ela <- results[ela]
 results <- results[!ela]
+mods <- sapply(results, \(x) x[[1]]$model)
+names(results) <- mods
 
+sp1 <- extract_sampler_params(results$diamonds[[1]])
+sp2 <- extract_sampler_params(results$diamonds[[4]])
+sp1$n_leapfrog__ |> mean()
+sp2$n_leapfrog__ |> mean()
+
+
+sp1 <- extract_sampler_params(results$wham[[1]])
+sp2 <- extract_sampler_params(results$wham[[4]])
+sp1$n_leapfrog__ |> mean()
+sp2$n_leapfrog__ |> mean()
+
+message("Making MLE vs posterior correlation and variance plots (slow)...")
 cors <- lapply(results, get_cors) |> bind_rows() |>filter(replicate==1 & metric=='Stan default')
 vars <- lapply(results, get_vars) |> bind_rows() |>filter(replicate==1 & metric=='Stan default')
 g1 <- ggplot(vars, aes(post.sd, marginal.sd, color=model)) +
@@ -81,6 +90,7 @@ g <- cowplot::plot_grid(g1,g2, rel_widths = c(1,1.9),
                         label_size = 12)
 ggsave('plots/post_vs_Q.png', g, width=8, height=2.75, units='in', dpi=300)
 
+message("making ESS change plots")
 # get ESS changes with NUTS to SNUTS
 ess_results <- lapply(results,
         function(x) {
@@ -90,49 +100,23 @@ ess_results <- lapply(results,
           select(mutate(out, eff=ESS/time.total), model, metric=metric,
                replicate, par, partype, ESS, time.total, eff)})|>
                     bind_rows() |>
- mutate(SNUTS=ifelse(as.character(metric)=='Stan default', 'NUTS', 'SNUTS'))
+ mutate(alg=algf(metric))
 g <- ggplot(ess_results,
-             aes(SNUTS, y=eff, color=partype,
-                 group=interaction(par,replicate))) +
-  geom_line(alpha=.25) + geom_jitter(width=.05)+
-  theme(legend.position = 'top')+
-  facet_wrap('model') + scale_y_log10()+
-  labs(x=NULL, y='Efficiency (ESS/t)', color=NULL)
-ggsave("plots/essf_nuts_snuts_all.png", g, width=6, height=6)
-g <- ggplot(ess_results,
-            aes(SNUTS, y=ESS, color=partype,
+            aes(alg, y=eff, color=partype,
                 group=interaction(par,replicate))) +
-  geom_line(alpha=.25) + geom_jitter(width=.05)+
+  geom_line(alpha=.25) + geom_jitter(width=.08, size=1)+
   theme(legend.position = 'top')+
-  facet_wrap('model') + scale_y_log10()+
-  labs(x=NULL, y='Effective sample size (ESS)', color=NULL)
-ggsave("plots/ess_nuts_snuts_all.png", g, width=6, height=6)
+  facet_wrap('model', scales='free_y') +scale_y_log10()+
+  labs(x=NULL, y='Efficiency (ESS/t)', color=NULL)
+ggsave("plots/eff_nuts_snuts_all.png", g, width=8, height=7)
 
-message("Creating reference posterior list...")
-ref_posts_list <- lapply(results, \(mod) {
-  print(mod[[1]]$model)
-               df=lapply(mod, \(x)
-                 cbind(model=x$model, metric=x$metric, replicate=x$replicate,
-                       as.data.frame(x))) |> bind_rows()
-               if('sparse' %in% df$metric){
-                 df = df |> filter(metric=='sparse')
-               } else if('dense' %in% df$metric){
-                 df = df |> filter(metric=='dense')
-               } else if('diag' %in% df$metric){
-                 df = df |> filter(metric=='diag')
-               } else {stop("no Q metric found in results file for mod", x$model)}
-               # thin down to 10k draws
-               if(nrow(df)>10000) df=df[seq(from=1, to=nrow(df), len=10000),]
-               df
-}
-)
-# convert to named list for easier access later
-names(ref_posts_list) <- lapply(ref_posts_list, \(x) x$model[1]) |> unlist()
-saveRDS(ref_posts_list, 'results/ref_posts_list.RDS')
 
+
+message("Making case study plots...")
 stats <- lapply(results, get_stats) |> bind_rows() |>
   group_by(model) |>
-  mutate(rel_eff=eff/mean(eff[metric=='unit']),
+  mutate(alg=algf(metric),
+         rel_eff=eff/mean(eff[metric=='unit']),
          rel_ess=ess/mean(ess[metric=='unit']),
          rel_time=time.total/mean(time.total[metric=='unit']),
          gr.ratio=gr2/gr,
@@ -141,103 +125,69 @@ stats <- lapply(results, get_stats) |> bind_rows() |>
   arrange(desc(mean_rel_eff)) |>
   mutate(model=factor(model, levels=unique(model)),
          metricf=metricf(metric))
-# g1 <- ggplot(stats, aes(x=model, y=rel_time, color=metric)) +
-#   geom_jitter(width=.1, height=0) +
-#   theme(axis.text.x = element_text(angle = 90)) +
-#   scale_y_log10() + geom_hline(yintercept=1) +
-#   labs(x=NULL, y='Wall time relative to unit metric',
-#        color=NULL)
-# g2 <- ggplot(stats, aes(x=model, y=rel_ess, color=metric)) +
-#   geom_jitter(width=.1, height=0) +
-#   theme(axis.text.x = element_text(angle = 90)) +
-#   scale_y_log10() + geom_hline(yintercept=1) +
-#   labs(x=NULL, y='ESS relative to unit metric',
-#        color=NULL)
-# g3 <- ggplot(stats, aes(x=model, y=rel_eff, color=metric)) +
-#   geom_jitter(width=.1, height=0) +
-#   theme(axis.text.x = element_text(angle = 90)) +
-#   scale_y_log10() + geom_hline(yintercept=1) +
-#   labs(x=NULL, y='Efficiency (minESS/time)\nrelative to unit metric',
-#        color=NULL)
-#ggsave('plots/perf_rel.png', g3, width=6, height=4)
-
 
 perf_long <- stats |> pivot_longer(cols=c('rel_ess', 'rel_time', 'rel_eff')) |>
   mutate(pre_metric=metricf(metric),
          name2=factor(name, levels=c('rel_time', 'rel_ess', 'rel_eff'),
                       labels=c('Time', 'min ESS', 'Efficiency (ESS/s)')))
-g <- ggplot(perf_long, aes(x=model, y=value, color=pre_metric)) +
+g <- ggplot(perf_long, aes(x=model, y=value, color=alg)) +
   geom_hline(yintercept=1) +
   geom_jitter(width=.1, height=0, alpha=.5) +
   theme(axis.text.x = element_text(angle = 90, hjust=1, vjust=.5)) +
-  theme(legend.position='top')+
+  #theme(legend.position='top')+
+  theme(legend.position='inside', legend.position.inside = c(.9,.8))+
   scale_y_log10() + #coord_flip()+
   facet_wrap('name2', ncol=3, scales='free_y') +
-  labs(x=NULL, y='Value relative to Stan defaults',
+  labs(x=NULL, y='Relative value (SNUTS / NUTS)',
        color=NULL)
-ggsave('plots/perf_mods.png', g, width=7, height=3)
-
-# g <- ggplot(filter(perf_long, name=='rel_eff'),
-#             aes(x=model, y=value, color=pre_metric)) +
-#   geom_hline(yintercept=1) +
-#   geom_jitter(width=.1, height=0, alpha=.5) +
-#   theme(axis.text.x = element_text(angle = 90, hjust=1, vjust=.5),
-#         legend.position = 'inside', legend.position.inside = c(.9,.7)) +
-#   scale_y_log10() + #coord_flip()+
-#   facet_wrap('name2', ncol=1, scales='free_y') +
-#   labs(x=NULL, y='Value relative to no pre-metric',
-#        color=NULL)
-# g
-# ggsave('plots/case_studies_eff_rel.png', g, width=5, height=3.5)
+ggsave('plots/perf_mods.pdf', g, width=7, height=3.25)
 
 
-filter(perf_long, model=='wildf_adapted' & replicate==1) |> select(mean_rel_eff)
+filter(perf_long, model=='wham') |> select(mean_rel_eff)
+filter(perf_long, model=='wham' & replicate==1) |> select(mean_rel_eff)
+filter(perf_long, model=='diamonds' & replicate==2) |> select(mean_rel_eff)
 
 stats_long <- stats |> mutate(gr.ratio=log10(gr.ratio)) |>
   select(model, metric, pct.divs, rhat, gr.ratio) |>
     pivot_longer(c('pct.divs', 'gr.ratio', 'rhat')) |>
-  mutate(name2=factor(name, levels=c('gr.ratio', 'pct.divs', 'rhat'),
+  mutate(alg=algf(metric),
+    name2=factor(name, levels=c('gr.ratio', 'pct.divs', 'rhat'),
     labels=c('log10 ratio gradient', '% Divergences', 'max Rhat'))) |>
-  select(model, metric, value, name2)
-g <- ggplot(stats_long, aes(model, y=value, color=metric)) +
+  select(model, alg, metric, value, name2)
+g <- ggplot(stats_long, aes(model, y=value, color=alg)) +
   geom_jitter(width=.1) +
   facet_wrap('name2', ncol=1, scales='free_y') +
   theme(axis.text.x = element_text(angle = 90, hjust=1, vjust=.5))
 ggsave('plots/case_studies_stats.png', g, width=4, height=6)
 
+message("Making table of case study timings...")
 grad_timings <- stats |>
   #each metric has it's own gr and gr2, so don't need unit here
   filter(metric!='unit') |>
   group_by(model) |>
   summarize(metric=metric[1],
-            gr=1000*mean(gr),
-            gr2=1000*mean(gr2),
-            gr.ratio=mean(gr.ratio),
+            # gr=1000*mean(gr),
+            # gr2=1000*mean(gr2),
+            # gr.ratio=mean(gr.ratio),
             pct.Qall=100*mean(time.Qall/time.total)) |>
-arrange(gr.ratio)
-grad_timings
-write.csv(grad_timings, file='results/grad_timings.csv', row.names=FALSE)
+  arrange(model)
+bench <- read.csv('results/bench_casestudies.csv')
+
+# remove unneccesary models
+mods_timings <- merge(bench, grad_timings, by='model', all=TRUE) |>
+  filter(!model=='wildf_adapted') |>
+  select(model, metric=metric.x, npar, pct.sparsity, rel_gr, pct.Qall)
+stopifnot(sum(is.na(mods_timings))==0)
+write.csv(mods_timings, file='results/timings_casestudies_table.csv', row.names=FALSE)
 
 
+message("Making plot of wildf issues...")
 fitswildf2 <- readRDS('results/wildf2_fits.RDS')
 fitswildf3 <- readRDS('results/wildf3_fits.RDS')
-
-# wildf2 <- lapply(fitswildf2, \(x) cbind(adapt_delta=.9, metric=x$metric, as.data.frame(x))) |>
-#   bind_rows()
-# parsall <- g3[[1]]$data |> arrange(value) |> pull(par)
-# p <- parsall[1:4]
-# pairs_admb(fitswildf2[[1]], pars=p)
-# pairs_admb(fitswildf2[[2]], pars=p)
-# pairs_admb(fitswildf2[[2]], pars=c('plantSlopeSD', 'slope'))
-# pairs_admb(fitswildf3[[1]], pars=p)
-# pairs_admb(fitswildf3[[2]], pars=p)
 post2 <- lapply(fitswildf2, \(x) cbind(adapt_delta=.9, metric=x$metric, as.data.frame(x))) |>
   bind_rows()
 post3 <- lapply(fitswildf3, \(x) cbind(adapt_delta=.99, metric=x$metric, as.data.frame(x))) |>
   bind_rows()
-# postwildf <- bind_rows(post2, post3) |> select(all_of(c('metric','adapt_delta',p)))
-# ggplot(postwildf, aes(plantSlopeSD, slope, color=metric)) + geom_point(alpha=.5) +
-#   facet_wrap('adapt_delta')
 
 # pull out the mode and cor for two worst params
 ind <- which(fitswildf3[[1]]$mle$parnames %in% c('plantSlopeSD', 'slope'))
@@ -269,7 +219,7 @@ points(mle[1], mle[2], pch=17, cex=1, col='blue')
 with(post3_rotated, plot(plantSlopeSD, slope, col=ifelse(metric=='unit', 1,2), cex=.5,
                          xlab='log plantSlopeSD',
                          xlim=xlim2, ylim=ylim2))
-mtext('Rotated via Q', line=.25)
+mtext('Transformed via Q', line=.25)
 lines(ellipse::ellipse(0, centre=mle_rotated, scale=c(1,1)), col='blue')
 points(mle_rotated[1], mle_rotated[2], pch=17, cex=1, col='blue')
 box(col=gray(.4))
@@ -277,23 +227,9 @@ legend('bottomright', legend=c('unit', 'sparse'), pch=1, cex=.8,  col=1:2, bty='
 dev.off()
 
 
-warmups <- lapply(list.files('results/warmups/', full.names = TRUE), readRDS)
-sp <- lapply(warmups, function(y){
-  lapply(y, function(x){
-    cat(x$model, x$metric, x$replicate, "\n")
-    cbind(model=x$model, metric=x$metric, replicate=x$replicate, plot_sampler_params(x, plot=FALSE)$data )
-  }
-  )
-}
-) |> bind_rows()
-eps <- filter(sp, variable=='log_stepsize' & iteration < 1000)
-g <- ggplot(eps, aes(iteration, y=value,
-                     group=interaction(chain,replicate, metric))) +
-  geom_line(alpha=.1) +
-  facet_wrap('model', ncol=3,scale='free_y') + labs(y='log step-size')
-ggsave('plots/warmup.png',g, width=8, height=8)
 
 
+message("Making ELA plots...")
 # embedded laplace approximation (ELA) results compared to 'auto'
 # for full integration
 stats_ela <- lapply(results_ela, get_stats) |> bind_rows() |>
@@ -310,7 +246,6 @@ stats_ela <- lapply(results_ela, get_stats) |> bind_rows() |>
   ungroup() |>
   arrange(desc(mean_rel_eff)) |>
   mutate(model=factor(model, levels=unique(model)))
-
 
 # very carefully massage output to plot for two scenariors: NUTS and SNUTS
 stats_tmp <- bind_rows(mutate(stats_ela, ELA=TRUE), mutate(stats, ELA=FALSE)) |>
@@ -331,11 +266,55 @@ g <- ggplot(xx, aes(modelf, y=y, color=metricf, shape=type)) +
   geom_jitter(width=.1, height=0, alpha=.7) +
   theme(axis.text.x = element_text(angle = 90, hjust=1, vjust=.5)) +
   scale_y_log10() + #coord_flip()+
-  labs(x=NULL, y='Relative Efficiency (ELA/full NUTS)',
+  labs(x=NULL, y='Relative Efficiency\n(ELA / full NUTS)',
        color=NULL, shape=NULL)+
-  theme(legend.position='top')
-ggsave('plots/perf_ELA.png', g, width=4.5, height=3)
+  theme(legend.position='right')
+ggsave('plots/perf_ELA.pdf', g, width=5, height=3)
 
 
+if(TRUE){
+  message("skipping reference posterior lists since fits did not change..")
+  message("!!! make sure to rerun pathfinder if model fits change !!!")
+} else {
 
-perf_long |> filter(model=='wham') |> group_by(metric) |> summarize(ess=mean(ess), time=mean(time.total)/(60*60)/3, eff=mean(eff))
+  message("Creating reference posterior list for pathfinder...")
+  ref_posts_list <- lapply(results, \(mod) {
+    #print(mod[[1]]$model)
+    df=lapply(mod, \(x)
+              cbind(model=x$model, metric=x$metric, replicate=x$replicate,
+                    as.data.frame(x))) |> bind_rows()
+    if('sparse' %in% df$metric){
+      df = df |> filter(metric=='sparse')
+    } else if('dense' %in% df$metric){
+      df = df |> filter(metric=='dense')
+    } else if('diag' %in% df$metric){
+      df = df |> filter(metric=='diag')
+    } else {stop("no Q metric found in results file for mod", x$model)}
+    # thin down to 10k draws
+    if(nrow(df)>10000) df=df[seq(from=1, to=nrow(df), len=10000),]
+    df
+  }
+  )
+  # convert to named list for easier access later
+  names(ref_posts_list) <- lapply(ref_posts_list, \(x) x$model[1]) |> unlist()
+  saveRDS(ref_posts_list, 'results/ref_posts_list.RDS')
+}
+
+message("Making Pathfinder plots...")
+warmups <- lapply(list.files('results/warmups/', full.names = TRUE), readRDS)
+sp <- lapply(warmups, function(y){
+  lapply(y, function(x){
+    cat(x$model, x$metric, x$replicate, "\n")
+    cbind(model=x$model, metric=x$metric, replicate=x$replicate, plot_sampler_params(x, plot=FALSE)$data )
+  }
+  )
+}
+) |> bind_rows()
+eps <- filter(sp, variable=='log_stepsize' & iteration < 1000)
+g <- ggplot(eps, aes(iteration, y=value,
+                     group=interaction(chain,replicate, metric))) +
+  geom_line(alpha=.1) +
+  facet_wrap('model', ncol=3,scale='free_y') + labs(y='log step-size')
+ggsave('plots/warmup.png',g, width=8, height=8)
+
+message("Done processing results!")

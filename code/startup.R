@@ -4,6 +4,7 @@ library(StanEstimators)
 library(rstan)
 library(shinystan)
 ##library(TMB)
+library(TMBhelper)
 library(dplyr)
 library(ggplot2)
 library(tidyr)
@@ -11,11 +12,15 @@ library(dsem)
 library(cowplot)
 library(mvtnorm)
 library(microbenchmark)
+library(bench)
 library(future)
 library(fmesher)
 library(adnuts)
 library(here)
 theme_set(theme_bw())
+
+#' Convert metric to algorithm
+algf <- function(metric) factor(ifelse(metric=='unit' | metric=='Stan default', 'NUTS','SNUTS'))
 
 #' Make a factor of model names sorted alphabetically (for plotting)
 modelf <- function(x){
@@ -23,7 +28,7 @@ modelf <- function(x){
   factor(x, levels=labs)
 }
 
-benchmark_metrics <- function(obj, metrics=NULL, model=NULL){
+benchmark_metrics <- function(obj, times=100, metrics=NULL, model=NULL){
   if(is.null(metrics)){
     metrics <- c('unit', 'diag', 'dense', 'sparse',  'sparse-J')
     # if no RE, sparse won't work
@@ -35,20 +40,31 @@ benchmark_metrics <- function(obj, metrics=NULL, model=NULL){
   if(is.null(model))
     model <- obj$env$DLL
   message("optimizing model ", model, "...")
+  obj$env$beSilent()
   opt <- with(obj, nlminb(par, fn, gr))
-  Q <- sdreport(obj, getJointPrecision=TRUE)$jointPrecision
-  M <- solve(as.matrix(Q))
-  n <- nrow(Q)
+  sdrep <- sdreport(obj, getJointPrecision=TRUE)
+  Q <- sdrep$jointPrecision
+  if(!is.null(Q)){
+    M <- solve(as.matrix(Q))
+  }  else {
+    M <- sdrep$cov.fixed
+    Q <- Matrix(solve(M), sparse = TRUE)
+  }
+  n <- length(obj$env$last.par.best)
   res <- lapply(metrics, function(metric) {
-
     out <- adnuts::sample_sparse_tmb(obj, rotation_only = TRUE,
-                                     metric=metric, Q=Q, Qinv=M, skip_optimization = TRUE)
-    rbind(data.frame(metric=metric, what='gr',
-                     time=summary(microbenchmark(out$gr2(out$x.cur+rnorm(n, sd=.1)), unit='ms', times=100))$median),
-          data.frame(metric=metric, what='fn',
-                     time=summary(microbenchmark(out$fn2(out$x.cur+rnorm(n, sd=.1)), unit='ms', times=100))$median))
+                                     metric=metric, Q=Q, Qinv=M,
+                                     skip_optimization = TRUE)
+    metric <- out$metric # in case auto
+    x0 <- out$x.cur
+    # make sure to add tiny random component during benchmarking to
+    # avoid TMB tricks of skipping calcs
+    time <- summary(microbenchmark(out$gr2(x0+rnorm(n, sd=.0000001)),
+                                   unit='ms', times=times))$median
+    return(data.frame(metric=metric, what='gr', time=time))
   })
-  res <- do.call(rbind, res) |> tidyr::pivot_wider(id_cols=metric, names_from = what, values_from = time)
+  res <- do.call(rbind, res) |>
+    tidyr::pivot_wider(id_cols=metric, names_from = what, values_from = time)
   pct.sparsity <- round(100*mean(Q[lower.tri(Q)] == 0),2)
   res <- cbind(res, npar=length(obj$env$last.par.best), pct.sparsity=pct.sparsity, model=model)
   res
@@ -425,9 +441,9 @@ rmvnorm_prec <-
   }
 
 ## Simulate a 2D AR1 Poisson process
-sim_spde_dat <- function(n, sparse=TRUE, map=NULL){
+sim_spde_dat <- function(n, sparse=TRUE, map=NULL, seed=NULL){
   require(RTMB)
-  set.seed(n)
+  if(is.null(seed)) set.seed(n)
   t0 <- Sys.time()
   n_x = n_y = n
   D_xx = abs(outer(1:n_x, 1:n_x, FUN="-"))
@@ -466,6 +482,8 @@ sim_spde_dat <- function(n, sparse=TRUE, map=NULL){
       nll <- -dgmrf(x, 0, Q, log=TRUE)        ## Negative log likelihood
       eta <- beta0 + x[meshidxloc] / tau
       nll <- nll - sum(dpois( n, exp(eta), log=TRUE ))
+      # broad prior to stabilize when estimated
+      nll <- nll - dnorm(log_tau, mean=-1.75, sd=2, log=TRUE)
       return(nll)
     }
   } else {
