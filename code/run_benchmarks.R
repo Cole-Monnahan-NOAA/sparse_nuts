@@ -1,157 +1,157 @@
 source("code/startup.R")
-require(microbenchmark)
-library(Matrix)
 
 
-## benchmark the case studies for different metrics
+# quick plot function which gets called a few times below
+plot.bench <- function(bench) {
+  bench_spde_gr <- bench |> group_by(metric,type, nrepars) |>
+    summarize(time=median(time), size=median(size), .groups='drop') |>
+    mutate(reltime=time/time[metric=='unit'],
+           relsize=size/size[metric=='unit'])|>
+    mutate(type=factor(type,
+                       levels=c('simple', 'original'),
+                       labels = c('Transformation only', 'Transformation + gradient'))) |>
+    filter(metric %in% c('dense', 'diag','sparse')) |>
+    mutate(metric=metricf(metric)) |>
+    pivot_longer(cols=c(reltime,relsize)) |>
+    # some weird data massaging to get time and size into same long factor
+    filter(! (name=='relsize' & type =='Simple')) |>
+    mutate(type2=ifelse(name=='reltime', as.character(type), 'Memory size')) |>
+    mutate(type2=factor(type2,
+                        levels=c('Transformation only',
+                                 'Transformation + gradient',
+                                 'Memory size')))
+  g <- ggplot(bench_spde_gr, aes(x=nrepars, y=value,
+                                 color=metric)) +
+    geom_line(linewidth=1, alpha=.8) + geom_point() +
+    labs(y='Value relative to no metric',
+         x='Number of random effects',
+         color=NULL) +
+    facet_wrap('type2', nrow=1, scales='free_y') + scale_y_log10() +
+    scale_x_log10() +   geom_hline(yintercept=1)+
+    #guides(col=guide_legend(nrow=2)) +
+    theme(legend.position='inside',
+          legend.position.inside = c(.075,.77),
+          legend.background = element_rect(fill = "transparent"))
+  g
+}
+
+
+#  benchmark of metric gradient timings on a simplified
+# model, isolating rotation costs vs model + rotation gradient
+# costs
+metrics <- c('unit', 'diag', 'dense', 'sparse')
+ndata <- floor(c(3,7, 9,13, 17, 20, 30, 40, 50,65, 80,100))
+bench <- NULL; set.seed(121)
+for(n in ndata){
+  for(rr in 1:6){
+    message('Simulating data and fitting model..')
+    # tau not estimated since goes to 0 every once in a while and
+    # breaks everything
+    obj <- sim_spde_dat(n, sparse=TRUE, seed=n+rr)#, map=list(log_tau=factor(NA)))
+    # this ensures good convergence, more reliable than nlminb
+    opt <- TMBhelper::fit_tmb(obj, getsd=FALSE, newtonsteps = 2, loopnum=2,
+                              control=list(trace=0))
+    stopifnot(max(abs(obj$gr(opt$par)))<.0001)
+    Q <- sdreport(obj, getJointPrecision=TRUE)$jointPrecision
+    Qinv <- solve(Q)
+    nrepars <- length(obj$env$parList()$x)
+    mle <- obj$env$last.par.best
+    times <- ifelse(nrepars<500, 500, 100)
+    # message("Rebuilding RTMB obj without random effects...")
+    for(metric in metrics){
+      for(type in c('original', 'simple')){
+        cat(n, rr, metric, type, '\n')
+        if(type=='original'){
+          # rebuilding obj each time so don't need to worry about
+          # reusing x in gr(x) and messing up the timings
+          obj2 <- RTMB::MakeADFun(func = obj$env$data,
+                                  parameters = obj$env$parList(),
+                                  map = obj$env$map, random = NULL, silent = TRUE,
+                                  DLL = obj$env$DLL)
+        } else {
+          obj2 <- RTMB::MakeADFun(func = function(pars) sum(pars$x),
+                                  parameters = obj$env$parList(),
+                                  map = obj$env$map, random = NULL, silent = TRUE,
+                                  DLL = obj$env$DLL)
+        }
+        set.seed(n)
+        out <- adnuts:::.rotate_posterior(metric, obj2$fn, obj2$gr, Q, Qinv, mle)
+        size <- as.numeric(object.size(out))/1000 # Kb of memory
+        # bench::mark seemed to work better but produced flat for sparse simple combo which seemed wrong.. sparse gradient calls should scale worse with dimensionality. not sure why that happened.
+      #  time <- as.numeric(bench::mark(out$gr2(out$x.cur+rnorm(length(out$x.cur))/1000),
+       #                   min_time=Inf, max_iterations=times, time_unit='ms')$median)
+        time <- as.numeric(summary(microbenchmark(grad=out$gr2(out$x.cur),
+                                       times=times, unit='ms'))$median)
+          bench <- rbind(bench, data.frame(type=type,
+                                         replicate=rr,
+                                         metric=metric,
+                                         ndata=n, nrepars=nrepars,
+                                         size=size,
+                                         time=time))
+      }
+    }
+  }
+  if(n>3){
+    g <- plot.bench(bench)
+    print(g)
+    ggsave('plots/spde_gradient_bechmark.png', g, width=8, height=2.75, units='in')
+    saveRDS(bench, 'results/bench_spde_gr.RDS')
+  }
+}
+
+
+pct.sparsity <- round(100*mean(as.matrix(Q)[lower.tri(Q)] == 0),2)
+xx <- as.matrix(cov2cor(Qinv))
+maxcor <- max(abs(xx[lower.tri(xx)]))
+#hist(abs(xx[lower.tri(xx)]))
+
+# make final figure for paper
+bench <- readRDS('results/bench_spde_gr.RDS')
+g <- plot.bench(bench)
+ggsave('plots/spde_gradient_bechmark.pdf', g, width=6.5, height=2.5, units='in')
+
+
+
+
+
+## benchmark the case studies for different metrics, was used
+## early on to explore metrics in depth but not used now. This is
+## very sensitive to things but seems to work by adding a very,
+## very tiny random vector to gr() and running a ton of
+## replicates
+source('code/startup.R')
 source('code/load_rtmb_objects.R')
-b_m <- benchmark_metrics
+b_m <- function(obj, model=NULL, metrics=mm, times=5000)
+  benchmark_metrics(obj=obj, model=model, metrics=c('unit','auto'), times=times)
 bench.rtmb <- bind_rows(
   b_m(obj.causal, model = 'causal'),
   b_m(obj.diamonds, model = 'diamonds'),
   b_m(obj.irt_2pl, model = 'irt_2pl'),
-  #b_m(obj.kilpisjarvi, model = 'kilpisjarvi')
+  b_m(obj.irt_2pl_nc, model = 'irt_2pl_nc'),
+  b_m(obj.kilpisjarvi, model = 'kilpisjarvi'),
   b_m(obj.lynx, model = 'lynx'),
   b_m(obj.radon, model = 'radon'),
   b_m(obj.schools, model = 'schools')
 )
 source('code/load_tmb_objects.R')
-objs <- list(obj.gp_pois_regr, obj.petrel, obj.pollock, obj.salamanders, obj.sam, obj.sdmTMB, obj.simple, obj.swallows, obj.wham, obj.wildf)
-bench.tmb <-  objs |> lapply(b_m) |> bind_rows()
-bench <- rbind(bench.rtmb, bench.tmb)
-saveRDS(bench, file='results/bench_casestudies.RDS')
+bench.tmb <- bind_rows(
+  b_m(obj.dlm, model = 'dlm'),
+  b_m(obj.gp_pois_regr),
+  b_m(obj.petrel, times=1000, model='petrel'),
+  b_m(obj.pollock),
+  b_m(obj.salamanders, model='salamanders'),
+  b_m(obj.sam, model='sam'),
+  b_m(obj.sdmTMB),
+  b_m(obj.swallows),
+  b_m(obj.wham),
+  b_m(obj.wildf))
 
-bench <- readRDS(file='results/bench_casestudies.RDS') |>
+bench <- rbind(bench.rtmb, bench.tmb) |>
   group_by(model) |>
-  mutate(rel_gr=gr/gr[metric=='unit'], rel_fn=fn/fn[metric=='unit'])
-bench_wide <- select(bench, model, pct.sparsity, npar, metric, rel_gr) |>
-  tidyr::pivot_wider(names_from='metric', values_from='rel_gr') |>
-  arrange(sparse)
-write.csv(bench_wide, file='results/bench_casestudies_table.csv', row.names=FALSE)
+  select(model, metric, npar, pct.sparsity, gr) |>
+  mutate(rel_gr=gr/gr[metric=='unit']) |>
+  filter(metric!='unit') |> arrange(model)
 
-bench_wide <- select(bench, model, pct.sparsity, npar, metric, rel_fn) |>
-  tidyr::pivot_wider(names_from='metric', values_from='rel_fn') |>
-  arrange(sparse)
+# this gets merged with other stats in process_results
+write.csv(bench, file='results/bench_casestudies.csv', row.names=FALSE)
 
-
-
-# ## benchmark gradient calcs externally to show the impact of
-# ## sparsity on the joint grad
-# bench.sparse <- bench.dense <- list()
-# ndata <- floor(sqrt(10^(1:3)))
-# ndata <- floor(sqrt(2^(4:11)))
-# for(n in ndata){
-#   print(n)
-#   obj <- sim_spde_dat(n, sparse=TRUE)
-#   nrepars <- length(obj$env$parList()$x)
-#   obj2 <- RTMB::MakeADFun(func=obj$env$data, parameters=obj$env$parList(),
-#                           map=obj$env$map,
-#                           random=NULL, silent=TRUE,
-#                           DLL=obj$env$DLL)
-#   bench <- microbenchmark(obj2$gr(), times=50, unit='s')
-#   bench.sparse <- rbind(bench.sparse,
-#                         data.frame(model='sparse',
-#                                    ndata=n, nrepars=nrepars,
-#                                    time=summary(bench)$median[1]))
-#   obj <- sim_spde_dat(n, sparse=FALSE)
-#   obj2 <- RTMB::MakeADFun(func=obj$env$data, parameters=obj$env$parList(),
-#                           map=obj$env$map,
-#                           random=NULL, silent=TRUE,
-#                           DLL=obj$env$DLL)
-#   bench <- microbenchmark(obj2$gr(), times=50, unit='s')
-#   bench.dense <- rbind(bench.dense,
-#                        data.frame(model='dense',
-#                                   ndata=n, nrepars=nrepars,
-#                                   time=summary(bench)$median[1]))
-# }
-# bench <- rbind(bench.sparse, bench.dense)
-# saveRDS(bench, 'results/bench_spde.RDS')
-# bench_spde <- readRDS('results/bench_spde.RDS') |>
-#   group_by(nrepars) |>
-#   mutate(reltime=time[model=='dense']/time)
-# g <- ggplot(filter(bench_spde, model=='sparse'),
-#             aes(nrepars, reltime, color=NULL))  + geom_line() +
-#   geom_point() +
-#   scale_x_log10() + scale_y_log10() +
-#   labs(x='Number of spatial random effects',
-#        y='Sparse:dense\ngradient evaluation',
-#        color=NULL) +
-#   theme(legend.position.inside=c(.2,.8), legend.position='inside')
-# ggsave('plots/bench_spde.png', g, width=3.5, height=2.5)
-
-
-# quick benchmark of metric gradient timings on a simplified
-# model, isolating rotation costs vs model + rotation gradient
-# costs
-metrics <- c('unit', 'auto', 'diag', 'dense', 'sparse-J', 'sparse')
-ndata <- floor(c(3:7, 9, 11,15, seq(20,100, len=6)))
-bench <- NULL; set.seed(121)
-for(n in ndata){
-  print(n)
-  obj <- sim_spde_dat(n, sparse=TRUE)
-  opt <- with(obj, nlminb(par, fn, gr))
-  Q <- sdreport(obj, getJointPrecision=TRUE)$jointPrecision
-  Qinv <- solve(Q)
-  nrepars <- length(obj$env$parList()$x)
-  mle <- obj$env$last.par.best
-  times <- ifelse(nrepars<500, 500, 100)
-  x0 <- mle
-  # message("Rebuilding RTMB obj without random effects...")
-  for(metric in metrics){
-   for(type in c('original', 'simple')){
-    if(type=='original'){
-      obj2 <- RTMB::MakeADFun(func = obj$env$data,
-                              parameters = obj$env$parList(),
-                              map = obj$env$map, random = NULL, silent = TRUE,
-                              DLL = obj$env$DLL)
-    } else {
-      obj2 <- RTMB::MakeADFun(func = function(pars) sum(pars$x),
-                              parameters = obj$env$parList(),
-                              map = obj$env$map, random = NULL, silent = TRUE,
-                              DLL = obj$env$DLL)
-    }
-     # rebuilding obj each time so don't need to worry about
-     # reusing x in gr(x) and messing up the timings
-      out <- adnuts:::.rotate_posterior(metric, obj2$fn, obj2$gr, Q, Qinv, mle, obj=obj2)
-      xx <- microbenchmark(grad=out$gr2(out$x.cur),
-                           times=times, unit='ms')
-      bench <- rbind(bench, data.frame(type=type,
-                                       metric=metric,
-                                       ndata=n, nrepars=nrepars, time=summary(xx)$median))
-    }
-
-  }
-  if(n>2){
-    bench2 <- bench |> group_by(type, nrepars) |> filter(type=='simple') |>
-      mutate(reltime=time/time[metric=='unit'])
-    g <- ggplot(bench2, aes(x=nrepars, y=time, color=metric)) +
-      geom_line() + geom_point() +
-      facet_wrap('type')+
-      scale_y_log10() + scale_x_log10()
-    print(g)
-  }
-}
-
-bench_spde_gr <- bench |> group_by(type, nrepars) |>
-  mutate(reltime=time/time[metric=='unit']) |>
-  mutate(type=factor(type,
-                     levels=c('simple', 'original'),
-                     labels = c('Rotation only', 'Rotation and model gradient')))
-g <- ggplot(bench_spde_gr, aes(x=nrepars, y=reltime, color=metric)) +
-  geom_line(linewidth=1, alpha=.8) + #geom_point() +
-  labs(y='Time for gradient relative to unit', x='Number of random effects',
-       title='Benchmark for SPDE model') +
-  facet_wrap('type', nrow=2, scales='free_y') + scale_y_log10() +
-  scale_x_log10()
-ggsave('plots/spde_gradient_bechmark_all.png', g, width=5.5, height=5, units='in')
-
-g <- ggplot(filter(bench_spde_gr, metric %in% c('diag', 'dense', 'sparse')),
-            aes(x=nrepars, y=reltime, color=metricf(metric))) +
-  geom_line(linewidth=1, alpha=.8) + #geom_point() +
-  labs(y='Time for gradient relative to none', x='Number of random effects')+
-      # title='Benchmark for SPDE model') +
-  facet_wrap('type', nrow=1, scales='free_y') + scale_y_log10() +
-  scale_x_log10() + labs(color=NULL) +
-  theme(legend.position='inside', legend.position.inside = c(.1,.8))
-ggsave('plots/spde_gradient_bechmark.png', g, width=6, height=3, units='in')
-saveRDS(bench_spde_gr, 'results/bench_spde_gr.RDS')

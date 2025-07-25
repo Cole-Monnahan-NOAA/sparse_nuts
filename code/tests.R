@@ -1,4 +1,20 @@
+source(here('code/load_tmb_objects.R'))
 
+# test initial values
+obj <- obj.pollock
+
+opt <- with(obj, nlminb(par,fn,gr))
+Q <- sdreport(obj, getJointPrecision = TRUE)$jointPrecision
+M <- as.matrix(solve(Q))
+draws <- rmvnorm(n=1000, mu=obj$env$last.par.best, Sigma=M)
+
+obj2 <- MakeADFun(data=obj$env$data, parameters=obj$env$parList(), map=obj$env$map, random=NULL, DLL=obj$env$DLL)
+
+test <- apply(draws, 1, \(x) obj2$fn(x))
+
+mcmc <- sample_sparse_tmb(obj, iter=10, chains=20, init='random', metric='unit')
+obj2$fn(mcmc)
+mcmc
 # # chol decomp by hand from GMRF book
 # Q <- matrix(rnorm(9), nrow=3)
 # Q <- Q %*% t(Q)
