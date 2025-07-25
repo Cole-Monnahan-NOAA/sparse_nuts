@@ -1,4 +1,20 @@
-# A quick demo of how Q is calculated by TMB using the RTMB package
+## A quick demo and minimal reproducible example of sparse NUTS:
+# -how Q is calculated by TMB using the RTMB package
+# -how to use Q to transform the parameter space
+# -how to pass this to Stan via StanEstimators
+# -how the generalized delta method can be used for approximate
+# posteriors of generated quantities
+
+# From Monnahan, C.C., J.T. Thorson, K. Kristensen, and B.
+# Carpenter (in prep). Leveraging sparsity to improve no-U-turn
+# sampling efficiency for hierarchical Bayesian models
+
+# last updated July 2025
+
+# see https://github.com/Cole-Monnahan-NOAA/sparse_nuts/tree/main
+
+# !! adnuts::sample_sparse_tmb has this and other functionality
+# incorporated and should be used.. this is just a demo  !!
 
 library(RTMB)
 rm(list=ls())
@@ -15,6 +31,10 @@ f <- function(pars){
   lp <- sum(dnorm(eta, 0,1, log=TRUE))+ # hyperprior
     sum(dnorm(y,theta,sigma,log=TRUE))+ #likelihood
     logtau                              # jacobian
+  # silly generated quantity of random (eta) + fixed (tau) effects
+  gq <- sum(exp(logtau)*eta[2:4])
+  ADREPORT(gq)                          # request delta method SE
+  REPORT(gq)                            # simple output
   return(-lp)                           # TMB uses negative lp
 }
 obj <- MakeADFun(func=f, parameters=pars, random='eta', silent=TRUE)
@@ -87,19 +107,35 @@ gr.y <- function(y){
 }
 # back transform parameters
 y.to.x <- function(y) as.numeric(Matrix::solve(Lt, y)[iperm])
+
 # test them out
 fn.y(y0perm)
 obj2$fn(x0)  # matches but for sign
 gr.y(y0perm) # gradient at joint mode is 0 for fixed effects only
 
-
 ## -------------------------------------------------------------
 # Now show how to link this through StanEstimators
 library(StanEstimators)
 fit <- stan_sample(fn=fn.y, par_inits=x0perm, grad_fun=gr.y,
-                   num_chains=1)
+                   num_chains=4, seed = 12345)
 # posterior draws in transformed space
 post.y <- unconstrain_draws(fit) |> as.data.frame()
 # recorrelate the draws into untransformed space x
 post.x <- t(apply(post.y[,2:11], 1, FUN=y.to.x))
 cbind(postmean=colMeans(post.x), postmode=x0)
+
+## -------------------------------------------------------------
+# Now compare approximate (asymptotic normal) estimate of a
+# generated quantity using the generalized delta method (via
+# TMB::sdreport) against the posterior
+
+# The mean and SE from the delta methd are assumed to be normal
+gq.mle <- c(mean=sdrep$value, sd=sdrep$sd)
+# push each posterior draw through and extract the generated
+# quantity 'gq' to get posterior of gq
+gq.post <- apply(post.x, 1, \(x) obj2$report(x)$gq)
+hist(gq.post, freq=FALSE, breaks=30, main='Generated quantity example',
+     xlab='gq')
+x <- seq(min(gq.post), max(gq.post))
+y <- dnorm(x, gq.mle[1], gq.mle[2])
+lines(x,y, col=2, lwd=2)
