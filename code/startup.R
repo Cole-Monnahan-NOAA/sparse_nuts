@@ -92,9 +92,9 @@ fit_warmups <- function(obj, ...){
 
 
 #' Fit a model with all 4 variants of NUTS. Returns a list of fits)
-fit_models<- function(obj,  iter, warmup=NULL, chains=4,
+fit_models<- function(obj,  num_samples=NULL, num_warmup=NULL, chains=4,
                       cores=chains,
-                      replicates=1:3, cpus=3, thin=1,
+                      replicates=1:3, cpus=1, thin=1,
                       adapt_metric=FALSE, init='random',
                       metrics=c('unit', 'auto'),
                       outpath='results',
@@ -121,19 +121,13 @@ fit_models<- function(obj,  iter, warmup=NULL, chains=4,
     k <- 1
     for(metric in metrics){
       message("--- Starting model ", model, " replicate ", i, " for metric ", metric, ' ---')
-      control2 <- control; wm <- warmup
-      if(is.null(warmup)) wm <- ifelse(metric=='unit', floor(iter/2), 150)
-      if(!adapt_metric & metric!='unit'){
-        control2$metric <- 'unit_e'
-        control2$adapt_init_buffer <- 25
-        control2$adapt_term_buffer <- 75
-        control2$adapt_window <- 0
-      }
-      fit <- sample_sparse_tmb(obj, iter=iter, warmup=wm,
-                               chains=chains, cores=cores,
-                               seed=i, metric=metric, thin=thin,
-                               control=control2, init=init,
-                               refresh=refresh, ...)
+      fit <- sample_snuts(obj, num_samples=num_samples,
+                          num_warmup=num_warmup,
+                          chains=chains, cores=cores,
+                          seed=i, metric=metric, thin=thin,
+                          control=control, init=init,
+                          refresh=refresh, model_name = model,
+                          ...)
       fit$par_type <- ifelse(seq_along(fit$par_names) %in% obj$env$random, 'random', 'fixed')
       fit$replicate <- i; fit$model <- model
       fits[[k]] <- fit
@@ -272,19 +266,17 @@ get_vars <- function(fits){
 get_stats <- function(fits){
   x <- lapply(fits, function(fit) {
     ess <- min(fit$monitor$n_eff)
-    rhat <- max(fit$monitor$rhat)
+    rhat <- max(fit$monitor$Rhat)
     time.total <- sum(fit$time.total + fit$time.Q + fit$time.Qinv)
     eff <- ess/time.total
     sp <- extract_sampler_params(fit)
     data.frame(model=fit$model, metric=fit$metric, replicate=fit$replicate, ess=ess,
                rhat=rhat, eff=eff, #time.total=time.total,
-               gr=fit$time.gr,
                time.Qall=fit$time.Q +fit$time.Qinv + fit$time.opt,
                time.total=time.total,
                pct.divs=100*mean(sp$divergent__),
                time.warmup=sum(fit$time.warmup),
-               time.sampling=sum(fit$time.sampling),
-               gr2=fit$time.gr2)
+               time.sampling=sum(fit$time.sampling))
   })
   do.call(rbind,x)
 }
@@ -328,7 +320,7 @@ plot_timings <- function(fits){
 }
 
 plot_stats <- function(fits){
-  stats <- get_stats(fits) %>% select(-rhat, -gr) %>%
+  stats <- get_stats(fits) %>% select(-rhat) %>%
     pivot_longer(c(-replicate, -model, -metric)) %>%
     mutate(name=factor(name,
         levels=c('gr2', 'time.warmup', 'time.sampling', 'pct.divs', 'ess', 'eff'),
