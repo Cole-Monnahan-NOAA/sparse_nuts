@@ -1,7 +1,5 @@
 
 
-## https://james-thorson-noaa.github.io/dsem/articles/vignette.html#multi-causal-ecosystem-synthesis
-# Requires loading RTMB
 library(glmmTMB)
 
 setwd(here('models/salamanders'))
