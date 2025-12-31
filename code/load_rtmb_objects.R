@@ -1,4 +1,4 @@
-setwd(here())
+setwd(here::here())
 
 if('hmmTMB' %in% .packages()) detach(package:hmmTMB)
 if('TMB' %in% .packages()) detach(package:TMB)
@@ -11,6 +11,7 @@ schools_dat <- list(J = 8,
 pars <- list(mu=0, logtau=0, eta=rep(1,8))
 
 f <- function(pars){
+  require(RTMB)
   RTMB::getAll(schools_dat, pars)
   theta <- mu + exp(logtau) * eta;
   lp <- sum(dnorm(eta, 0,1, log=TRUE))+ # prior
@@ -18,6 +19,8 @@ f <- function(pars){
     logtau                          # jacobian
   return(-lp)
 }
+environment(f) <- new.env()
+environment(f)$schools_dat <- schools_dat
 obj.schools <- RTMB::MakeADFun(func=f, parameters=pars,
                                random="eta", silent=TRUE)
 
@@ -39,6 +42,7 @@ pars <- list(b=rep(0, Kc),## population-level effects
 
 ## define the (negative) posterior density as a function in R
 f <- function(pars){
+  require(RTMB)
   getAll(pars,diamonds_dat)
   ## transformed parameters
   sigma <- exp(logsigma)
@@ -57,12 +61,15 @@ f <- function(pars){
   REPORT(lp)
   return(-lp) # TMB expects negative log posterior
 }
+environment(f) <- new.env()
+environment(f)$diamonds_dat <- diamonds_dat
 obj.diamonds <- RTMB::MakeADFun(f, pars, random='b', silent=TRUE)
 
 
 kilpisjarvi_dat <- readRDS('models/kilpisjarvi/dat.RDS')
 pars <- list(alpha=1, beta=1, logsigma=0)
 f <- function(pars){
+  require(RTMB)
   getAll(pars,kilpisjarvi_dat)
   sigma <- exp(logsigma)
   lp <-
@@ -73,12 +80,15 @@ f <- function(pars){
   REPORT(lp)
   return(-lp)
 }
+environment(f) <- new.env()
+environment(f)$kilpisjarvi_dat <- kilpisjarvi_dat
 obj.kilpisjarvi <- MakeADFun(f, pars, random=NULL, silent=TRUE)
 
 
 radon_dat <- readRDS('models/radon/dat.RDS')
 pars <- list(a=rep(0, radon_dat$J), mu_a=1,  logsigma_a=1, logsigma_y=1)
 f <- function(pars){
+  require(RTMB)
   getAll(pars,radon_dat)
   y_hat <- a[county]
   sigma_a <- exp(logsigma_a)
@@ -91,6 +101,8 @@ f <- function(pars){
   REPORT(lp)
   return(-lp)
 }
+environment(f) <- new.env()
+environment(f)$radon_dat <- radon_dat
 obj.radon <- MakeADFun(f, pars, random='a', silent=TRUE, DLL='radon')
 
 
@@ -109,6 +121,7 @@ pars <- list(logsigma_theta=1, theta=rep(1, irt_2pl_dat$J),
              logsigma_a=-0.8, loga=rep(.5, irt_2pl_dat$I),
              mu_b=1, logsigma_b=1, b=rep(.5, irt_2pl_dat$I))
 func <- function(pars){
+  require(RTMB)
   getAll(irt_2pl_dat, pars)
   sigma_theta <- exp(logsigma_theta)
   sigma_a <- exp(logsigma_a)
@@ -134,9 +147,12 @@ func <- function(pars){
   REPORT(lp)
   return(-lp)
 }
+environment(func) <- new.env()
+environment(func)$irt_2pl_dat <- irt_2pl_dat
 obj.irt_2pl <- MakeADFun(func, pars, random=c('theta', 'loga','b'))
 
 func_nc <- function(pars){
+  require(RTMB)
   getAll(irt_2pl_dat, pars)
   sigma_theta <- exp(logsigma_theta)
   sigma_a <- exp(logsigma_a)
@@ -162,6 +178,8 @@ func_nc <- function(pars){
   REPORT(lp)
   return(-lp)
 }
+environment(func_nc) <- new.env()
+environment(func_nc)$irt_2pl_dat <- irt_2pl_dat
 obj.irt_2pl_nc <- MakeADFun(func_nc, pars, random=c('theta', 'loga','b'))
 
 
@@ -189,8 +207,8 @@ rk4sys <- function (f, a, b, y0, n, Pars, ...){
   y <- rbind(y0, y)
   return(list(x = x, y = y))
 }
-f <- identity
 dzdt <- function(Time, State, Pars){
+  f <- identity
   # Necessary in packages
   "c" <- ADoverload("c")
   "[<-" <- ADoverload("[<-")
@@ -200,6 +218,7 @@ dzdt <- function(Time, State, Pars){
 }
 
 get_nll <- function(pars){
+  require(RTMB)
   getAll(pars)
   zhat_ti <- array(0, dim = dim(dat) )
   # Necessary in packages
@@ -232,7 +251,12 @@ pars <- list(ln_alpha=1, ln_beta=1, ln_gamma=1,
              ln_sigma=1, ln_tau=1,
              z_ti = dat) #ifelse( is.na(dat), rep(1,nrow(dat))%o%colMeans(dat,na.rm=TRUE), dat
 globals.lynx <- list(dat=dat, rk4sys=rk4sys, dzdt=dzdt, f=f)
-get_nll(pars)
+#get_nll(pars)
+environment(get_nll) <- new.env()
+environment(get_nll)$dat <- dat
+environment(get_nll)$rk4sys <- rk4sys
+environment(get_nll)$dzdt <- dzdt
+environment(get_nll)$f <- f
 obj.lynx <- MakeADFun( func = get_nll, silent=TRUE,
                   parameters = pars,
                   random = "z_ti" )

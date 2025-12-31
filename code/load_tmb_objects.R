@@ -1,12 +1,12 @@
 ## this script loads the TMB (C++) models into the global
 ## workspace
-setwd(here())
+setwd(here::here())
 if('hmmTMB' %in% .packages()) detach(package:hmmTMB)
 if('TMB' %in% .packages()) detach(package:TMB)
 library(TMB)
 
-TMB::runExample('simple')
-obj.simple <- obj
+#TMB::runExample('simple')
+#obj.simple <- obj
 
 library(dsem)
 obj.dlm <- readRDS('models/dlm/obj.dlm.RDS')

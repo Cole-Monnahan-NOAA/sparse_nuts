@@ -5,7 +5,8 @@ source("code/startup.R")
 skip.models <- c('ratios', 'ratio', 'RTMB', 'simple', 'wildf2', 'wildf3', 'wildf4', 'cors', 'cor','VAR','glmmTMB')
 skip.models <- c(skip.models, paste0(skip.models, '_ELA'))
 
-
+width1 <- 180/25.4 # 180mm full width in inches
+width2 <- 80/25.4 # half width
 
 
 
@@ -31,6 +32,16 @@ perf_sim <- stats_sim |>
   mutate(relval=value/value[alg=='NUTS']) |> ungroup() |>
   mutate(name2=factor(name, levels=c('time', 'ess', 'eff'),
                       labels=c('Total time (s)', 'minimum ESS', 'Efficiency (ESS/s)')))
+# print some stats for the MS
+filter(perf_sim, replicate==1 & name=='time' & alg=='SNUTS') |>
+  select(nrepars, model, relval, name2, metric)
+filter(perf_sim, replicate==1 & name=='ess' & alg=='SNUTS') |>
+  select(nrepars, model, relval, name2)
+filter(perf_sim, replicate==1 & name=='eff' & alg=='SNUTS') |>
+  select(nrepars, model, relval, name2)
+
+
+
 g <- ggplot(perf_sim, aes(x=nrepars, y=value, color=alg, group=interaction(alg,replicate))) +
   facet_grid(name2~model, scales='free') + geom_point() +
   geom_line()+
@@ -51,8 +62,8 @@ group_by(perf_sim, model) |>
 
 message("Starting case studies...")
 message("Reading in large case study fit files...")
-xx <- list.files('results',  pattern='_fits.RDS', full.names = TRUE)
-xx <- xx[!xx %in% paste0('results/',skip.models,'_fits.RDS')]
+xx <- list.files('results/case_studies',  pattern='_fits.RDS', full.names = TRUE)
+xx <- xx[!xx %in% paste0('results/case_studies/',skip.models,'_fits.RDS')]
 results <- xx |> lapply(readRDS)
 mods <- sapply(results, \(x) x[[1]]$model)
 ela <- grepl('_ELA', mods)
@@ -116,33 +127,35 @@ ggsave("plots/eff_nuts_snuts_all.png", g, width=8, height=7)
 
 message("Making case study plots...")
 stats <- lapply(results, get_stats) |> bind_rows() |>
+  filter(metric!='tmbstan') |>
   group_by(model) |>
   mutate(alg=algf(metric),
          rel_eff=eff/mean(eff[metric=='unit']),
          rel_ess=ess/mean(ess[metric=='unit']),
+         rel_leapfrog=n.leapfrog/mean(n.leapfrog[metric=='unit']),
          rel_time=time.total/mean(time.total[metric=='unit']),
-         gr.ratio=gr2/gr,
+         #gr.ratio=gr2/gr,
          mean_rel_eff=mean(rel_eff)) |>
   ungroup() |>
   arrange(desc(mean_rel_eff)) |>
   mutate(model=factor(model, levels=unique(model)),
          metricf=metricf(metric))
 
-perf_long <- stats |> pivot_longer(cols=c('rel_ess', 'rel_time', 'rel_eff')) |>
+perf_long <- stats |> pivot_longer(cols=c('rel_ess', 'rel_time', 'rel_leapfrog', 'rel_eff')) |>
   mutate(pre_metric=metricf(metric),
-         name2=factor(name, levels=c('rel_time', 'rel_ess', 'rel_eff'),
-                      labels=c('Time', 'min ESS', 'Efficiency (ESS/s)')))
+         name2=factor(name, levels=c( 'rel_leapfrog','rel_time', 'rel_ess', 'rel_eff'),
+                      labels=c('Trajectory length','Time', 'min ESS', 'Efficiency (ESS/s)')))
 g <- ggplot(perf_long, aes(x=model, y=value, color=alg)) +
   geom_hline(yintercept=1) +
   geom_jitter(width=.1, height=0, alpha=.5) +
   theme(axis.text.x = element_text(angle = 90, hjust=1, vjust=.5)) +
   #theme(legend.position='top')+
-  theme(legend.position='inside', legend.position.inside = c(.9,.8))+
+  theme(legend.position='inside', legend.position.inside = c(.9,.35))+
   scale_y_log10() + #coord_flip()+
-  facet_wrap('name2', ncol=3, scales='free_y') +
-  labs(x=NULL, y='Relative value (SNUTS / NUTS)',
+  facet_wrap('name2', ncol=2, scales='free_y') +
+  labs(x=NULL, y='Relative value\n(SNUTS / NUTS)',
        color=NULL)
-ggsave('plots/perf_mods.pdf', g, width=7, height=3.25)
+ggsave('plots/perf_mods.pdf', g, width=7, height=5)
 
 
 filter(perf_long, model=='wham') |> select(mean_rel_eff)
@@ -243,36 +256,67 @@ stats_ela <- lapply(results_ela, get_stats) |> bind_rows() |>
   mutate(rel_eff=eff/mean(eff[metric=='unit']),
          rel_ess=ess/mean(ess[metric=='unit']),
          rel_time=time.total/mean(time.total[metric=='unit']),
-         gr.ratio=gr2/gr,
+        # gr.ratio=gr2/gr,
          mean_rel_eff=mean(rel_eff)) |>
   ungroup() |>
   arrange(desc(mean_rel_eff)) |>
   mutate(model=factor(model, levels=unique(model)))
+# #### old, overly complicated way to do it
+# # very carefully massage output to plot for two scenariors: NUTS and SNUTS
+# stats_tmp <- bind_rows(mutate(stats_ela, ELA=TRUE), mutate(stats, ELA=FALSE)) |>
+#   filter(metric!='tmbstan') |>
+#   select(model, metric, eff, ELA) |>
+#   arrange(model, metric, ELA) |> group_by(model) |>
+#   mutate(eff_rel=eff/mean(eff[metric=='unit' & ELA==FALSE]),
+#     eff_rel_unit=eff/mean(eff[metric=='unit' & ELA==TRUE]),
+#          eff_rel_full=eff/mean(eff[metric!='unit' & ELA==FALSE])) |>
+#   filter(ELA==TRUE) |> ungroup()
+# # this one is efficiency of ELA:full with both using 'unit'
+# # metric so comparable to previous studies
+# x1 <- filter(stats_tmp, metric=='unit') |> mutate(y=eff_rel, type='NUTS')
+# # now look at ELA:full using SNUTS 'auto' for both
+# x2 <- filter(stats_tmp, metric!='unit') |> mutate(y=eff_rel_full, type='SNUTS')
+# xx <- bind_rows(x1,x2) |> ungroup() |> mutate(modelf=modelf(model), metricf=metricf(metric))
+# g <- ggplot(xx, aes(modelf, y=y, color=metricf, shape=type)) +
+#   geom_hline(yintercept=1) +
+#   geom_jitter(width=.1, height=0, alpha=.7) +
+#   theme(axis.text.x = element_text(angle = 90, hjust=1, vjust=.5)) +
+#   #scale_y_log10() + #coord_flip()+
+#   labs(x=NULL, y='Relative Efficiency\n(ELA / full NUTS)',
+#        color=NULL, shape=NULL)+
+#   theme(legend.position='right')
+# g
+#
 
-# very carefully massage output to plot for two scenariors: NUTS and SNUTS
 stats_tmp <- bind_rows(mutate(stats_ela, ELA=TRUE), mutate(stats, ELA=FALSE)) |>
-  select(model, metric, eff, ELA) |>
-  arrange(model, metric, ELA) |> group_by(model) |>
-  mutate(eff_rel=eff/mean(eff[metric=='unit' & ELA==FALSE]),
-    eff_rel_unit=eff/mean(eff[metric=='unit' & ELA==TRUE]),
-         eff_rel_full=eff/mean(eff[metric!='unit' & ELA==FALSE])) |>
-  filter(ELA==TRUE) |> ungroup()
-# this one is efficiency of ELA:full with both using 'unit'
-# metric so comparable to previous studies
-x1 <- filter(stats_tmp, metric=='unit') |> mutate(y=eff_rel, type='NUTS')
-# now look at ELA:full using SNUTS 'auto' for both
-x2 <- filter(stats_tmp, metric!='unit') |> mutate(y=eff_rel_full, type='SNUTS')
-xx <- bind_rows(x1,x2) |> ungroup() |> mutate(modelf=modelf(model), metricf=metricf(metric))
-g <- ggplot(xx, aes(modelf, y=y, color=metricf, shape=type)) +
+  filter(metric!='tmbstan') |>
+  mutate(alg=algf(metric), model=modelf(model)) |>
+  select(model, metric, eff, ELA, alg) |>
+  arrange(model, metric, ELA) |>
+  group_by(model) |>
+  mutate(eff_rel=eff/mean(eff[alg=='SNUTS' & ELA==FALSE])) |>
+  ungroup() |> filter(ELA==TRUE, is.finite(eff_rel)) |>
+  mutate(alg2=factor(alg, levels=c('NUTS','SNUTS'), labels=c('ELA-NUTS', 'ELA-SNUTS')))
+
+g <- ggplot(stats_tmp, aes(x=model, shape=alg2, color=alg2, y=eff_rel)) +
+ # facet_wrap('alg', ncol=1) +
   geom_hline(yintercept=1) +
   geom_jitter(width=.1, height=0, alpha=.7) +
   theme(axis.text.x = element_text(angle = 90, hjust=1, vjust=.5)) +
   scale_y_log10() + #coord_flip()+
-  labs(x=NULL, y='Relative Efficiency\n(ELA / full NUTS)',
-       color=NULL, shape=NULL)+
-  theme(legend.position='right')
-ggsave('plots/perf_ELA.pdf', g, width=5, height=3)
-
+  labs(x=NULL, y='Efficiency relative to full SNUTS',
+       color=NULL, shape=NULL) +
+  #  theme(legend.position='bottomleft') +
+  guides(col=guide_legend(nrow=2))+
+  theme(legend.position='inside', legend.position.inside = c(.21,.1),
+        legend.title = element_text(size = 0), # Adjust title font size
+        legend.text = element_text(size = 8),   # Adjust label font size
+        axis.title.y=element_text(size=10),
+    #    axis.text=element_blank(), axis.ticks=element_blank(),
+        legend.key.size = unit(0.2, "cm") # Adjust the size of the key box/symbol area
+  )
+g
+ggsave('plots/perf_ELA.pdf', g, width=width2, height=3, units='in')
 
 if(TRUE){
   message("skipping reference posterior lists since fits did not change..")

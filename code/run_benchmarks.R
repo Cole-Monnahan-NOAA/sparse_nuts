@@ -6,10 +6,10 @@ plot.bench <- function(bench) {
   bench_spde_gr <- bench |> group_by(metric,type, nrepars) |>
     summarize(time=median(time), size=median(size), .groups='drop') |>
     mutate(reltime=time/time[metric=='unit'],
-           relsize=size/size[metric=='unit'])|>
+           relsize=size/size[metric=='unit']) |>
     mutate(type=factor(type,
                        levels=c('simple', 'original'),
-                       labels = c('Transformation only', 'Transformation + gradient'))) |>
+                       labels = c('Decorrelation', 'Decorrelation + gradient'))) |>
     filter(metric %in% c('dense', 'diag','sparse')) |>
     mutate(metric=metricf(metric)) |>
     pivot_longer(cols=c(reltime,relsize)) |>
@@ -17,14 +17,14 @@ plot.bench <- function(bench) {
     filter(! (name=='relsize' & type =='Simple')) |>
     mutate(type2=ifelse(name=='reltime', as.character(type), 'Memory size')) |>
     mutate(type2=factor(type2,
-                        levels=c('Transformation only',
-                                 'Transformation + gradient',
+                        levels=c('Decorrelation',
+                                 'Decorrelation + gradient',
                                  'Memory size')))
   g <- ggplot(bench_spde_gr, aes(x=nrepars, y=value,
                                  color=metric)) +
     geom_line(linewidth=1, alpha=.8) + geom_point() +
-    labs(y='Value relative to no metric',
-         x='Number of random effects',
+    labs(y='Value relative to no decorrelation',
+         x='Number of parameters',
          color=NULL) +
     facet_wrap('type2', nrow=1, scales='free_y') + scale_y_log10() +
     scale_x_log10() +   geom_hline(yintercept=1)+
@@ -43,6 +43,7 @@ metrics <- c('unit', 'diag', 'dense', 'sparse')
 ndata <- floor(c(3,7, 9,13, 17, 20, 30, 40, 50,65, 80,100))
 bench <- NULL; set.seed(121)
 for(n in ndata){
+  # number of replicates to do to stabilize estimates
   for(rr in 1:6){
     message('Simulating data and fitting model..')
     # tau not estimated since goes to 0 every once in a while and
@@ -56,7 +57,7 @@ for(n in ndata){
     Qinv <- solve(Q)
     nrepars <- length(obj$env$parList()$x)
     mle <- obj$env$last.par.best
-    times <- ifelse(nrepars<500, 500, 100)
+    times <- 1000#ifelse(nrepars<500, 500, 100)
     # message("Rebuilding RTMB obj without random effects...")
     for(metric in metrics){
       for(type in c('original', 'simple')){
@@ -75,17 +76,18 @@ for(n in ndata){
                                   DLL = obj$env$DLL)
         }
         set.seed(n)
-        out <- adnuts:::.rotate_posterior(metric, obj2$fn, obj2$gr, Q, Qinv, mle)
+        out <- SparseNUTS:::.rotate_posterior(metric, obj2$fn, obj2$gr, Q, Qinv, list(mle))
         size <- as.numeric(object.size(out))/1000 # Kb of memory
         # bench::mark seemed to work better but produced flat for sparse simple combo which seemed wrong.. sparse gradient calls should scale worse with dimensionality. not sure why that happened.
       #  time <- as.numeric(bench::mark(out$gr2(out$x.cur+rnorm(length(out$x.cur))/1000),
        #                   min_time=Inf, max_iterations=times, time_unit='ms')$median)
-        time <- as.numeric(summary(microbenchmark(grad=out$gr2(out$x.cur),
+        npars <- length(mle)
+        time <- as.numeric(summary(microbenchmark(grad=out$gr2(out$x.cur[[1]]),
                                        times=times, unit='ms'))$median)
           bench <- rbind(bench, data.frame(type=type,
                                          replicate=rr,
                                          metric=metric,
-                                         ndata=n, nrepars=nrepars,
+                                         ndata=n, nrepars=npars,
                                          size=size,
                                          time=time))
       }
