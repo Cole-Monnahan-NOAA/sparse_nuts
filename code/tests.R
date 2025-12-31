@@ -1,3 +1,118 @@
+
+## run some tests with different correlations to find reasonable
+## thresholds for auto metric
+
+source("code/startup.R")
+library(adnuts)
+
+reps=1; cpus=1
+stats <- NULL
+dvec <- c(floor(10^( seq(1,3, len=5))))
+for(d in dvec){
+  for(rho in c( .9, .999)){
+    for(type in c('full', 'single')){
+      if(type=='full'){
+        Sigma <- matrix(rho, nrow=d, ncol=d)
+      } else {
+        Sigma <- matrix(0, nrow=d, ncol=d)
+        Sigma[2,1] <- Sigma[1,2] <- rho
+      }
+      diag(Sigma) <- 1
+      library(RTMB)
+      pars <- list(x=rep(0,d))
+      f <- function(pars) -RTMB::dmvnorm(x=pars$x, Sigma=Sigma, log=TRUE)
+      obj <- MakeADFun(f, parameters=pars)
+      message("d=", d, "; rho=", rho, "; type=", type)
+      mcmc <- fit_models(obj, metrics=c('unit', 'dense'),
+                         init = 'last.par.best',
+                         num_warmup=150,
+                         rep=reps, cpus=cpus,
+                         chains=4,
+                         plot = FALSE, refresh=0,
+                         adapt_metric=FALSE,
+                         globals=list(Sigma=Sigma))
+      stats <- rbind(stats,cbind(type=type, rho=rho, d=d, get_stats(mcmc)))
+      stats.long <- stats |> group_by(rho, type, d, replicate) |>
+        summarize(rel_eff=eff[metric=='dense']/eff[metric=='unit'], .groups='drop')
+     g<- ggplot(stats.long, aes(d, rel_eff, group=interaction(rho,replicate),
+                             color=factor(rho))) + geom_line() + geom_point() +
+        scale_y_log10() + facet_wrap('type') + geom_hline(yintercept=1)
+     print(g)
+    }
+  }
+}
+stats.long <- stats |> group_by(rho, type, d, metric) |>
+  summarize(eff=mean(eff), .groups='drop')
+g<- ggplot(stats.long, aes(d, eff,
+                           color=factor(rho))) + geom_line() + geom_point() +
+  scale_y_log10() + facet_grid(metric~type) + geom_hline(yintercept=1) + scale_x_log10()
+print(g)
+
+
+# repeat with stan directly
+stanmod <-
+"
+data {
+  int<lower=0> d; // dimension
+  matrix[d, d] sigma; // known covariance
+}
+
+parameters {
+  vector[d] x;
+}
+
+model {
+  x ~ multi_normal(rep_vector(0, d), sigma);
+}
+"
+library(cmdstanr)
+mod <- cmdstan_model(stan_file=write_stan_file(stanmod))
+
+stats <- NULL
+dvec <- c(floor(10^( seq(1,3, len=5))))
+for(d in dvec[4:5]){
+  for(rho in c(0,.1,.3,.5,.7, .9, .999)){
+    for(type in c('full', 'single')){
+      message("d=", d, "; rho=", rho, "; type=", type)
+        if(type=='full'){
+        Sigma <- matrix(rho, nrow=d, ncol=d)
+      } else {
+        Sigma <- matrix(0, nrow=d, ncol=d)
+        Sigma[2,1] <- Sigma[1,2] <- rho
+      }
+      diag(Sigma) <- 1
+      dat <- list(d=d, sigma=Sigma)
+      fit <- mod$sample(
+        data = dat,
+        seed = 123,
+        chains = 4,
+        parallel_chains = 4,
+        refresh = 0 # print update every 500 iters
+      )
+      runtime <- sum(fit$time()$chains$total)
+      minESS <- min(fit$summary()$ess_bulk)
+      eff <-minESS/runtime
+      stats <- rbind(stats, data.frame(d=d, rho=rho, type=type, runtime=runtime, minESS=minESS, eff=eff))
+    }
+  }
+}
+
+
+stats.long <- stats |> group_by(rho, type, d) |>
+  summarize(eff=mean(eff), minESS=mean(minESS), .groups='drop')
+g<- ggplot(stats.long, aes(d, eff,
+                           color=factor(rho))) + geom_line() + geom_point() +
+  scale_y_log10() + facet_grid(.~type) + geom_hline(yintercept=1) + scale_x_log10()
+print(g)
+
+g<- ggplot(stats.long, aes(d, minESS,
+                           color=factor(rho))) + geom_line() + geom_point() +
+  scale_y_log10() + facet_grid(.~type) + geom_hline(yintercept=1) + scale_x_log10()
+print(g)
+
+
+
+
 source(here('code/load_tmb_objects.R'))
 
 

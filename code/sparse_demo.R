@@ -21,8 +21,7 @@ rm(list=ls())
 
 ## -------------------------------------------------------------
 # Use the schools model as an example. Setup model:
-dat <- list(J = 8,
-            y = c(28,  8, -3,  7, -1,  1, 18, 12),
+dat <- list(y = c(28,  8, -3,  7, -1,  1, 18, 12),
             sigma = c(15, 10, 16, 11,  9, 11, 10, 18))
 pars <- list(eta=rep(1,8),mu=0, logtau=1)
 f <- function(pars){
@@ -37,13 +36,17 @@ f <- function(pars){
   REPORT(gq)                            # simple output
   return(-lp)                           # TMB uses negative lp
 }
+f(pars)
 obj <- MakeADFun(func=f, parameters=pars, random='eta', silent=TRUE)
+obj$fn()  # marginal negative log posterior
+obj$gr()  # gradient of marginal -lp (fixed effects only)
 # Optimize and get Q via sdreport function
 opt <- with(obj, nlminb(par,fn,gr))
 sdrep <- sdreport(obj, getJointPrecision=TRUE)
 str(sdrep$jointPrecision)
-
-
+print(round(sdrep$jointPrecision,2))
+Q0 <- sdrep$jointPrecision
+SparseNUTS::plot_Q(Q=Q0)
 
 ## -------------------------------------------------------------
 # This code block shows how to calculate Q in R. It reproduces
@@ -71,7 +74,7 @@ Q[r,nonr] <- H_AB
 Q[nonr,r] <- H_BA
 Q[nonr, nonr] <- H_BB
 # this matches TMB's internal calculations in sdreport:
-max(abs((Q-sdrep$jointPrecision))) # [1] 2.775558e-17
+max(abs((Q-Q0))) # [1] 2.775558e-17
 
 
 ## -------------------------------------------------------------
@@ -79,10 +82,12 @@ max(abs((Q-sdrep$jointPrecision))) # [1] 2.775558e-17
 # be the original parameter space and 'y' the transformed one
 
 # first rebuild object without the Laplace appoximation (random=NULL)
-obj2 <- RTMB::MakeADFun(func=obj$env$data, parameters=obj$env$parList(),
+obj2 <- RTMB::MakeADFun(func=obj$env$data,
+                        parameters=obj$env$parList(),
                         map=obj$env$map,
                         random=NULL, silent=TRUE,
                         DLL=obj$env$DLL)
+obj2$gr() # notice this is not the marginal anymore
 # Do Cholesky on permuted Q
 chd <- Matrix::Cholesky(sdrep$jointPrecision, super=TRUE, perm=TRUE)
 L <- as(chd, "sparseMatrix")
@@ -97,11 +102,13 @@ x0perm <- x0[perm]               # permuted
 # initial value in the transformed, permuted space
 y0perm <- as.vector(Lt %*% x0perm)
 # redefine the objective and gradient functions
+# equation 4 of the MS: f_q'(q')=f_q( [L'P]^{-1}q')
 fn.y <- function(y)  -obj2$fn(Matrix::solve(Lt, y)[iperm])
 # carefully implement this to optimize sparsity and reduce
 # computations since the gradient call is the expensive part of
 # NUTS
 gr.y <- function(y){
+  # equation 4 of the MS: g_q'(q')=g_q( [L'P]^{-1}q')[L'P]^{-1}
   x <- Matrix::solve(Lt, y)[iperm]
   -Matrix::solve(L, as.numeric(obj2$gr(x))[perm])
 }
@@ -109,9 +116,8 @@ gr.y <- function(y){
 y.to.x <- function(y) as.numeric(Matrix::solve(Lt, y)[iperm])
 # test them out
 fn.y(y0perm)
-obj2$fn(x0)  # matches but for sign
+-obj2$fn(x0)  # matches
 gr.y(y0perm) # gradient at joint mode is 0 for fixed effects only
-
 
 ## -------------------------------------------------------------
 # Now show how to link this through StanEstimators
@@ -123,6 +129,7 @@ post.y <- unconstrain_draws(fit) |> as.data.frame()
 # recorrelate the draws into untransformed space x
 post.x <- t(apply(post.y[,2:11], 1, FUN=y.to.x))
 cbind(postmean=colMeans(post.x), postmode=x0)
+
 
 ## -------------------------------------------------------------
 # Now compare approximate (asymptotic normal) estimate of a
@@ -139,3 +146,9 @@ hist(gq.post, freq=FALSE, breaks=30, main='Generated quantity example',
 x <- seq(min(gq.post), max(gq.post))
 y <- dnorm(x, gq.mle[1], gq.mle[2])
 lines(x,y, col=2, lwd=2)
+
+
+# this is the package function with automates all this
+mcmc <- SparseNUTS::sample_snuts(obj, globals=list(dat=dat))
+plot(mcmc)
+pairs(mcmc, order='slow')

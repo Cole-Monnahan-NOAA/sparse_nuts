@@ -438,12 +438,12 @@ sim_spde_dat <- function(n, sparse=TRUE, map=NULL, seed=NULL){
   if(is.null(seed)) set.seed(n)
   t0 <- Sys.time()
   n_x = n_y = n
-  D_xx = abs(outer(1:n_x, 1:n_x, FUN="-"))
-  A_xx = Matrix( ifelse(D_xx==1, 1, 0) )
+  # make banded sparse to represent SAR (simultaneous autoregression) model
+  A_xx = Matrix::bandSparse(n=n, k=c(1,-1)) * 1
   Q_xx = -0.4 * A_xx
   diag(Q_xx) = 1 + 0.4^2
   Q_zz = kronecker( Q_xx, Q_xx )
-  z = rmvnorm_prec( n=1, mu=rep(0,nrow(Q_zz)), prec=Q_zz )
+  z = RTMB:::rgmrf0(n=1, Q=Q_zz )
   lambda = exp( 2 + as.vector(z) )
   ## Simulate nuissance parameter z from oscillatory (day-night) process
   Data = data.frame( expand.grid(x=1:n_x, y=1:n_y), z=as.vector(z), lambda=lambda )

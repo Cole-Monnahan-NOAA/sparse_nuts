@@ -7,6 +7,8 @@ skip.models <- c(skip.models, paste0(skip.models, '_ELA'))
 
 
 
+
+
 message("Processing simulated results...")
 stats_sim <- bind_rows(readRDS('results/spde_stats.RDS'),
                        #readRDS('results/VAR_stats.RDS'),
