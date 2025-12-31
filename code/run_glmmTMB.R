@@ -43,8 +43,8 @@ for(ii in 1:length(sitereps)){
   nrepars <- length(obj$env$random)
   fits <- fit_models(obj, chains=4, cores=4,
                      metrics=metrics,
-                     iter=2000,
-                     init='random', replicates=reps,
+                     init='random',
+                     replicates=reps,
                      cpus=ifelse(nreps<=128, cpus,1),
                      model='glmmTMB', plot=FALSE)
   stats <- rbind(stats, cbind(nreps=nreps, nrepars=nrepars, get_stats(fits)))

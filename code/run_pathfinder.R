@@ -105,7 +105,6 @@ g3 <- ggplot(w.all, aes(x=model, y=time_rel, color=type)) +
   geom_point(data=w.means, pch=17, size=2)
 g <- plot_grid(g3,  g2, nrow=1, labels = c('(a)', '(b)', '(c)')[-3],
                label_size = 10)
-               #rel_widths=c(1, 1, 1.35)[-2])
 
 ggsave('plots/pathfinder_all.png', g, width=7, height=2.5, dpi=300)
 

@@ -1,7 +1,7 @@
 
-## library(adnuts)
+## library(SparseNUTS)
 library(StanEstimators)
-library(rstan)
+#library(rstan)
 library(shinystan)
 ##library(TMB)
 library(TMBhelper)
@@ -12,11 +12,12 @@ library(dsem)
 library(cowplot)
 library(mvtnorm)
 library(microbenchmark)
-library(bench)
+#library(bench)
 library(future)
 library(fmesher)
-library(adnuts)
+library(SparseNUTS)
 library(here)
+library(Matrix)
 theme_set(theme_bw())
 
 #' Convert metric to algorithm
@@ -52,7 +53,7 @@ benchmark_metrics <- function(obj, times=100, metrics=NULL, model=NULL){
   }
   n <- length(obj$env$last.par.best)
   res <- lapply(metrics, function(metric) {
-    out <- adnuts::sample_sparse_tmb(obj, rotation_only = TRUE,
+    out <- SparseNUTS::sample_snuts(obj, rotation_only = TRUE,
                                      metric=metric, Q=Q, Qinv=M,
                                      skip_optimization = TRUE)
     metric <- out$metric # in case auto
@@ -72,17 +73,17 @@ benchmark_metrics <- function(obj, times=100, metrics=NULL, model=NULL){
 
 
 metricf <- function(x){
-  lvl <- c('unit', 'diag', 'dense', 'sparse')
+  lvl <- c('unit', 'diag', 'dense', 'sparse', 'stan')
   labs <- lvl
-  labs[1] <- 'Stan default'
+  labs[5] <- 'Stan default'
   factor(x, levels=lvl, labels=labs)
 }
 
 #' Wrapper function to run warmup tests.
 fit_warmups <- function(obj, ...){
-  fit_models(obj=obj, iter=1250,
-             warmup=1000, chains=1,
-             adapt_metric = TRUE,
+  fit_models(obj=obj, num_samples=250,
+             num_warmup=1000, chains=1,
+             adapt_stan_metric = TRUE,
              outpath='results/warmups',
              metrics='auto', plot=FALSE,
              cpus=cpus, replicates=reps,
@@ -91,13 +92,15 @@ fit_warmups <- function(obj, ...){
 
 
 
-#' Fit a model with all 4 variants of NUTS. Returns a list of fits)
+#' Fit a model with different metrics. Returns a list of fits)
 fit_models<- function(obj,  num_samples=NULL, num_warmup=NULL, chains=4,
                       cores=chains,
                       replicates=1:3, cpus=1, thin=1,
-                      adapt_metric=FALSE, init='random',
+                      adapt_metric=NULL,
+                      init='random',
                       metrics=c('unit', 'auto'),
                       outpath='results',
+                      do.tmbstan=FALSE,
                       control=NULL, model=NULL, plot=TRUE, refresh=500,
                       ...){
 
@@ -107,7 +110,7 @@ fit_models<- function(obj,  num_samples=NULL, num_warmup=NULL, chains=4,
   fp <- gsub('.dll','', unlist(getLoadedDLLs()[[obj$env$DLL]])$path)
   sfInit(parallel=cpus>1, cpus=cpus)
   sfExportAll()
-  sfLibrary(adnuts)
+  sfLibrary(SparseNUTS)
   if(isRTMB){
     sfLibrary(RTMB)
   } else {
@@ -127,6 +130,7 @@ fit_models<- function(obj,  num_samples=NULL, num_warmup=NULL, chains=4,
                           seed=i, metric=metric, thin=thin,
                           control=control, init=init,
                           refresh=refresh, model_name = model,
+                          adapt_stan_metric = adapt_metric,
                           ...)
       fit$par_type <- ifelse(seq_along(fit$par_names) %in% obj$env$random, 'random', 'fixed')
       fit$replicate <- i; fit$model <- model
@@ -138,6 +142,26 @@ fit_models<- function(obj,  num_samples=NULL, num_warmup=NULL, chains=4,
       # png(paste0('plots/', model, '_', metric, '_pairs_mismatch.png'), width=7, height=5, units='in', res = 300)
       # pairs_admb(fit, order='mismatch', pars=1:5)
       # dev.off()
+    }
+    if(do.tmbstan){
+      message("Starting tmbstan run")
+      set.seed(i)
+      inits <- sample_inits(fit, chains=chains)
+      tmp <- tmbstan::tmbstan(obj, cores=cores, chains=chains, init=inits,
+                              seed=i, refresh=500)
+      fit.tmbstan <- list(samples=rstan::extract(tmp, permuted=FALSE, inc_warmup=TRUE),
+                          sampler_params=rstan::get_sampler_params(tmp, inc_warmup=TRUE),
+                          # confirmed that this appears to drop warmup samples automatically
+                          monitor=posterior::summarise_draws(tmp),
+                          model=model, metric='tmbstan', warmup=tmp@stan_args[[1]]$warmup,
+                          iter=tmp@stan_args[[1]]$iter-tmp@stan_args[[1]]$warmup,
+                          thin=tmp@stan_args[[1]]$thin, replicate=i,
+                          time.warmup=as.numeric(rstan::get_elapsed_time(tmp)[,1]),
+                          time.sampling=as.numeric(rstan::get_elapsed_time(tmp)[,2]),
+                          time.total=sum(rstan::get_elapsed_time(tmp)),
+                          time.Q=0, time.Qinv=0, time.opt=0)
+      fits[[k]] <- fit.tmbstan
+      k <- k +1
     }
     return(invisible(fits))
   })
@@ -200,7 +224,7 @@ fit_models_old <- function(obj,  model, iter, warmup=NULL, chains=4, cores=4,
         control2$adapt_window <- 50
       }
       if(is.null(wm)) browser()
-      fit <- sample_sparse_tmb(obj, iter=iter, warmup=wm,
+      fit <- sample_snuts(obj, iter=iter, warmup=wm,
                                chains=chains, cores=cores,
                                seed=i, metric=metric,
                                control=control2, init=init,
@@ -216,11 +240,12 @@ fit_models_old <- function(obj,  model, iter, warmup=NULL, chains=4, cores=4,
 
 get_maxcors <- function(fits){
   x <- lapply(fits, function(fit){
+    if(fit$metric %in% c('stan', 'tmbstan')) return(NULL)
     post <- as.data.frame(fit)
     post.cor <- cor(post)
     diag(post.cor) <- 0 # zero out so can take max along rows
     max.cors <- sapply(1:ncol(post), function(i) post.cor[i,which.max(abs(post.cor[i,]))])
-    ess <- fit$monitor$n_eff[1:ncol(post)]
+    ess <- fit$monitor$ess_bulk[1:ncol(post)]
     eff <- ess/sum(fit$time.total + fit$time.Q + fit$time.Qinv)
     data.frame(model=fit$model, replicate=fit$replicate,
                metric=fit$metric, par=fit$par_names,
@@ -233,6 +258,7 @@ get_maxcors <- function(fits){
 
 get_cors <- function(fits){
   x <- lapply(fits, function(fit){
+    if(fit$metric %in% c('stan', 'tmbstan')) return(NULL)
     post <- as.data.frame(fit)
     post.cor <- cor(post)
     post.cor <- as.numeric(post.cor[lower.tri(post.cor)])
@@ -249,10 +275,11 @@ get_cors <- function(fits){
 
 get_vars <- function(fits){
   x <- lapply(fits, function(fit){
+    if(fit$metric %in% c('stan', 'tmbstan')) return(NULL)
     post <- as.data.frame(fit)
     post.sd <- apply(post, 2, sd)
     mle.sd <- fit$mle$se
-    ess <- fit$monitor$n_eff[1:ncol(post)]
+    ess <- fit$monitor$ess_bulk[1:ncol(post)]
     eff <- ess/sum(fit$time.total + fit$time.Q + fit$time.Qinv)
     data.frame(model=fit$model, replicate=fit$replicate,
                metric=fit$metric, par=fit$par_names,
@@ -265,16 +292,17 @@ get_vars <- function(fits){
 #' Helper function to extract key outputs from a fitted model
 get_stats <- function(fits){
   x <- lapply(fits, function(fit) {
-    ess <- min(fit$monitor$n_eff)
-    rhat <- max(fit$monitor$Rhat)
+    ess <- min(fit$monitor$ess_bulk)
+    rhat <- max(fit$monitor$rhat)
     time.total <- sum(fit$time.total + fit$time.Q + fit$time.Qinv)
     eff <- ess/time.total
-    sp <- extract_sampler_params(fit)
+    sp <- extract_sampler_params(fit, inc_warmup = FALSE)
     data.frame(model=fit$model, metric=fit$metric, replicate=fit$replicate, ess=ess,
                rhat=rhat, eff=eff, #time.total=time.total,
                time.Qall=fit$time.Q +fit$time.Qinv + fit$time.opt,
                time.total=time.total,
                pct.divs=100*mean(sp$divergent__),
+               n.leapfrog=mean(sp$n_leapfrog__),
                time.warmup=sum(fit$time.warmup),
                time.sampling=sum(fit$time.sampling))
   })
@@ -320,12 +348,12 @@ plot_timings <- function(fits){
 }
 
 plot_stats <- function(fits){
-  stats <- get_stats(fits) %>% select(-rhat) %>%
+  stats <- get_stats(fits) %>% select(-time.Qall, -time.sampling) %>%
     pivot_longer(c(-replicate, -model, -metric)) %>%
     mutate(name=factor(name,
-        levels=c('gr2', 'time.warmup', 'time.sampling', 'pct.divs', 'ess', 'eff'),
-        labels=c('Gradient eval (s)', 'NUTS warmup (s)',
-                 'NUTS sampling (s)', '% divergent', 'ESS',
+        levels=c('rhat', 'time.warmup', 'time.total', 'pct.divs', 'ess', 'eff'),
+        labels=c('rhat', 'NUTS warmup (s)',
+                 'Total time (s)', '% divergent', 'ESS',
                  'Efficiency (ESS/time)')))
   g <- ggplot(stats, aes(x=metric, y=value)) +
     geom_jitter(width=.03, pch=1) +
@@ -379,15 +407,15 @@ get_mon <- function(fits){
              replicate=fit$replicate, par=fit$monitor$variable,
              partype=factor(c(fit$par_type, 'lp__'),
                             levels=c('random', 'fixed', 'lp__')),
-             ESS=fit$monitor$n_eff,
-             Rhat=fit$monitor$Rhat, divergences=divs)
+             ESS=fit$monitor$ess_bulk,
+             rhat=fit$monitor$rhat, divergences=divs)
   }) %>% bind_rows %>% mutate(metric=metricf(metric)) %>%
     arrange(partype)
 }
 
 plot_mon <- function(fits){
   mon <- get_mon(fits) %>%
-    pivot_longer(cols=c('ESS', 'Rhat', 'divergences'))
+    pivot_longer(cols=c('ESS', 'rhat', 'divergences'))
  g1 <- ggplot(filter(mon, name=='ESS'),
               aes(metric, y=value, color=partype,
                   group=interaction(par,replicate))) +
@@ -395,11 +423,11 @@ plot_mon <- function(fits){
    ylim(0,NA) + theme(legend.position = 'top')+
    labs(x=NULL, y='Effective sample size', color=NULL)
 
- g2 <- ggplot(filter(mon, name=='Rhat'),
+ g2 <- ggplot(filter(mon, name=='rhat'),
               aes(metric, y=value, color=partype,
                   group=interaction(par,replicate))) +
    geom_line(alpha=.25) + geom_jitter(width=.05)+
-   labs(x=NULL, y='Rhat', color=NULL) + ylim(1,NA) +
+   labs(x=NULL, y='rhat', color=NULL) + ylim(1,NA) +
    theme(legend.position = 'top')
  g3 <- ggplot(filter(mon, name=='divergences'),
               aes(metric, y=value)) +
@@ -499,6 +527,9 @@ sim_spde_dat <- function(n, sparse=TRUE, map=NULL, seed=NULL){
       return(nll)
     }
   }
+  # allows tmbstan to work
+  environment(f) <- new.env()
+  environment(f)$data <- data
   obj <- RTMB::MakeADFun(f, parameters, random="x", silent=TRUE, map=map)
   return(obj)
 }
