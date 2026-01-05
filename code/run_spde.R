@@ -5,14 +5,14 @@ reps <- 1:3
 # run out of memory for big models, this helps a little but need to revisit at some point
 options(future.globals.maxSize = 10000 * 1024^2) # 10 GB limit
 stats <- list()
-for(ndata in c(12,15,20,25,30,35,40,50,70,90,110)){
+for(ndata in c(8,12,15,20,25,30,35,40,50,70,90,110)){
   set.seed(ndata)
   message("Starting analysis for ndata=",ndata)
   obj <- sim_spde_dat(ndata, TRUE, list(log_tau=factor(NA)))
   nrepars <- length(obj$env$last.par.best)
   fits <- fit_models(obj, chains=4, cores=4,
-                     metrics = c('stan', 'auto'),
-                     init='last.par.best',
+                     metrics = c('unit', 'auto'),
+                     init='random',
                      replicates=reps,
                      do.tmbstan=FALSE,
                      cpus=ifelse(ndata>=40, 1, cpus),

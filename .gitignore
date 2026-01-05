@@ -6,3 +6,4 @@ results/*.RDS
 results/warmups/*.RDS
 *.Rhistory
 results/pathfinder/*.RDS
+results/case_studies

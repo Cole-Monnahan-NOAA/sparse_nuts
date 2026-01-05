@@ -4,7 +4,7 @@ reps <- 1
 cpus <- 1
 
 stats.sd <- fits.list <- list()
-for(sd in 10^(0:9)){
+for(sd in 10^(0:6)){
   Sigma <- matrix(c(1,0,0,sd), nrow=2)
   Mu <- rep(0,2)
   data <- list(Mu=Mu, Sigma=Sigma)
@@ -20,8 +20,9 @@ for(sd in 10^(0:9)){
   Q <- solve(M)
   fits <- fit_models(obj, num_samples=1000, num_warmup=1000, cores=4,
                     chains=4, Q=Q,Qinv=M,
-                    metric=c('unit', 'diag', 'dense'),
+                    metric=c('stan', 'diag', 'dense'),
                     model='ratios', cpus=1, plot=FALSE,
+                    init='unif',
                     globals=list(data=data), replicates=reps)
   fits.list <- c(fits.list, fits)
   stats.sd <- rbind(stats.sd, cbind(sd=sd, get_stats(fits)))
@@ -33,7 +34,7 @@ saveRDS(fits.list, 'results/ratio_fits.RDS')
 
 stats.cor <- fits.list <- list()
 ## want them piled up near 1
-cors <- c(.01,1/(1+exp(-seq(-1,9, len=8))))
+cors <- c(.01,1/(1+exp(-seq(-1,8, len=8))))
 for(cor in cors){
   Sigma <- matrix(c(1,cor,cor,1), nrow=2)
   Mu <- rep(0,2)
@@ -50,8 +51,9 @@ for(cor in cors){
   Q <- solve(M)
   fits <- fit_models(obj, num_samples=1000, num_warmup=1000, cores=4,
                     chains=4, Q=Q,Qinv=M, skip_optimization=TRUE,
-                    metric=c('unit', 'diag', 'dense'),
+                    metric=c('stan', 'diag', 'dense'),
                     model='cors', plot = FALSE,
+                    init='unif',
                     globals=list(data=data), replicates=reps, cpus=1)
   fits.list <- c(fits.list, fits)
   stats.cor <- rbind(stats.cor, cbind(cor=cor, get_stats(fits)))

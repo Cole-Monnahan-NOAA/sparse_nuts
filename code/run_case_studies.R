@@ -66,7 +66,7 @@ fits.sam <- fit_models(obj.sam,  cpus=cpus,
                      outpath=out)
 fits.sdmTMB <- fit_models(obj.sdmTMB,
                           control=list(adapt_delta=.9),
-                          cpus=cpus, replicates=reps,
+                          cpus=cpus, replicates=1,
                           do.tmbstan=FALSE,
                           outpath=out)
 # Rerun with laplace turned on, called "embedded laplace
