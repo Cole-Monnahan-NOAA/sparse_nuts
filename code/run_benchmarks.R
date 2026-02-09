@@ -1,40 +1,6 @@
 source("code/startup.R")
 
 
-# quick plot function which gets called a few times below
-plot.bench <- function(bench) {
-  bench_spde_gr <- bench |> group_by(metric,type, nrepars) |>
-    summarize(time=median(time), size=median(size), .groups='drop') |>
-    mutate(reltime=time/time[metric=='unit'],
-           relsize=size/size[metric=='unit']) |>
-    mutate(type=factor(type,
-                       levels=c('simple', 'original'),
-                       labels = c('Decorrelation', 'Decorrelation + gradient'))) |>
-    filter(metric %in% c('dense', 'diag','sparse')) |>
-    mutate(metric=metricf(metric)) |>
-    pivot_longer(cols=c(reltime,relsize)) |>
-    # some weird data massaging to get time and size into same long factor
-    filter(! (name=='relsize' & type =='Simple')) |>
-    mutate(type2=ifelse(name=='reltime', as.character(type), 'Memory size')) |>
-    mutate(type2=factor(type2,
-                        levels=c('Decorrelation',
-                                 'Decorrelation + gradient',
-                                 'Memory size')))
-  g <- ggplot(bench_spde_gr, aes(x=nrepars, y=value,
-                                 color=metric)) +
-    geom_line(linewidth=1, alpha=.8) + geom_point() +
-    labs(y='Value relative to no decorrelation',
-         x='Number of parameters',
-         color=NULL) +
-    facet_wrap('type2', nrow=1, scales='free_y') + scale_y_log10() +
-    scale_x_log10() +   geom_hline(yintercept=1)+
-    #guides(col=guide_legend(nrow=2)) +
-    theme(legend.position='inside',
-          legend.position.inside = c(.075,.77),
-          legend.background = element_rect(fill = "transparent"))
-  g
-}
-
 
 #  benchmark of metric gradient timings on a simplified
 # model, isolating rotation costs vs model + rotation gradient
@@ -102,35 +68,23 @@ for(n in ndata){
 }
 
 
-pct.sparsity <- round(100*mean(as.matrix(Q)[lower.tri(Q)] == 0),2)
-xx <- as.matrix(cov2cor(Qinv))
-maxcor <- max(abs(xx[lower.tri(xx)]))
-#hist(abs(xx[lower.tri(xx)]))
 
-# make final figure for paper
-bench <- readRDS('results/bench_spde_gr.RDS')
-g <- plot.bench(bench)
-ggsave('plots/spde_gradient_bechmark.pdf', g, width=6.5, height=2.5, units='in')
-
-
-
-
-
-## benchmark the case studies for different metrics, was used
-## early on to explore metrics in depth but not used now. This is
-## very sensitive to things but seems to work by adding a very,
-## very tiny random vector to gr() and running a ton of
-## replicates
+## Benchmark the case studies for different metrics. Used to be embedded in
+## sample_snuts but split out into separate function in the package. This is
+## very sensitive to things but seems to work by adding a very, very tiny random
+## vector to gr() and running a ton of replicates
 source('code/startup.R')
 source('code/load_rtmb_objects.R')
-b_m <- function(obj, model=NULL, metrics=mm, times=5000)
-  benchmark_metrics(obj=obj, model=model, metrics=c('unit','auto'), times=times)
+b_m <- function(obj, model=NULL, metrics=c('unit', 'auto'), times=5000)
+  SparseNUTS:::benchmark_metrics(obj=obj, model_name=model,
+                                 metrics=metrics,
+                                 times=times)
 bench.rtmb <- bind_rows(
   b_m(obj.causal, model = 'causal'),
   b_m(obj.diamonds, model = 'diamonds'),
   b_m(obj.irt_2pl, model = 'irt_2pl'),
   b_m(obj.irt_2pl_nc, model = 'irt_2pl_nc'),
-  b_m(obj.kilpisjarvi, model = 'kilpisjarvi'),
+  b_m(obj.kilpisjarvi, model = 'kilpisjarvi', metrics=c('unit', 'dense')),
   b_m(obj.lynx, model = 'lynx'),
   b_m(obj.radon, model = 'radon'),
   b_m(obj.schools, model = 'schools')
@@ -150,8 +104,8 @@ bench.tmb <- bind_rows(
 
 bench <- rbind(bench.rtmb, bench.tmb) |>
   group_by(model) |>
-  select(model, metric, npar, pct.sparsity, gr) |>
-  mutate(rel_gr=gr/gr[metric=='unit']) |>
+#  select(model, metric, time, npar, pct.sparsity) |>
+  mutate(rel_gr=round(time/time[metric=='unit'],2)) |>
   filter(metric!='unit') |> arrange(model)
 
 # this gets merged with other stats in process_results

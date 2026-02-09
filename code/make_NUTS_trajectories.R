@@ -203,7 +203,7 @@ print.letter <- function(label="(a)",xy=c(0.1,0.925),...) {
 
 ## Make exploratory plots of trajectories
 png('plots/NUTS_trajectories.png', width=5, height=6.5, units='in', res=300)
-par(mfrow=c(3,2), oma=c(0,1.1,0,0), mar=c(1.5,1.5,.25,.25), mgp=c(1,.25,0), tck=-.01)
+par(mfrow=c(3,2), oma=c(0,1.1,1.5,0), mar=c(1.5,1.5,.5,.5), mgp=c(1,.25,0), tck=-.01)
 init0 <- c(-1.05, -1.15) # init in iid Z space
 init0 <- c(-2.1112354,.1124123)
 #init0 <- c(-1,-1)
@@ -215,11 +215,13 @@ init0 <- lapply(1:nreps, \(x) init0)
 # init0 <- split(z, row(z))
 # nreps <- length(init0)
 ses <- c(1,1)
-eps <- .01
+eps <- .005
 td <- 12
 seed <- 1124261
 col2 <- rgb(1,0,0,alpha=1)
 col1 <- rgb(0,0,0,alpha=1)
+lty1 <- 1
+lty2 <- 1 # doesn't do anything b/c segs are so short
 kk <- 1
 for(mycor in c(.1, .5, .9)){
   corr <- matrix(c(1,mycor,mycor,1), 2)
@@ -250,33 +252,37 @@ for(mycor in c(.1, .5, .9)){
   # plot them in untransformed and transformed space
   for(transformed in c(FALSE,TRUE)){
     if(!transformed){
-      plot(ellipse::ellipse(covar), type='l', xlab=NA, ylab=NA)
+      xy <- ellipse::ellipse(x=covar)
+      plot(xy[,1], xy[,2], type='l', xlab=NA, ylab=NA)
       tmp <-  init
       a1 <- lapply(traj1, \(y) y$traj)
       a2 <- lapply(traj2, \(y) t(apply(y$traj, 1, function(x) chd %*% x)))
       p1 <- lapply(traj1, \(y) y$theta)
       p2 <- lapply(traj2, \(y) as.numeric(chd %*% y$theta))
       mtext(bquote(.(as.name('rho'))==.(mycor)), side=2, line=1.1)
-    } else {
-      plot(ellipse::ellipse(diag(2)), type='l', xlab=NA, ylab=NA)
+      if(kk==1) mtext('Original posterior', side=3, line=.5)
+      } else {
+      xy <- ellipse::ellipse(diag(2))
+      plot(xy[,1], xy[,2], type='l', xlab=NA, ylab=NA)
       tmp <-  init0
       a1 <-  lapply(traj1, \(y) t(apply(y$traj, 1, function(x) chd.inv %*% x)))
       a2 <-  lapply(traj2, \(y) y$traj)
       p1 <- lapply(traj1, \(y) as.numeric(chd.inv %*% y$theta))
       p2 <- lapply(traj2, \(y) y$theta)
+      if(kk==2) mtext('Decorrelated posterior', side=3, line=.5)
     }
     print.letter(label=letters[kk], xy=c(.075,.925), cex=1.25)
     kk <- kk +1
     if(kk==6) legend('bottomright', legend=c('Correlated', 'Decorrelated'), bty='n', lty=1, col=c(col1,col2))
     lapply(a1, \(a) {
       N <- nrow(a)
-      segments(a[-N,1], a[-N,2], a[-1,1], a[-1,2], lwd=2, col=col1)
+      segments(a[-N,1], a[-N,2], a[-1,1], a[-1,2], lty=lty1, lwd=2, col=col1)
       #points(a, pch=16, cex=.15,  col=col1)
       #points(a[1,1], a[1,2], col='green', pch=16)
     })
     lapply(a2, \(a) {
       N <- nrow(a)
-      segments(a[-N,1], a[-N,2], a[-1,1], a[-1,2], lwd=2, col=col2)
+      segments(a[-N,1], a[-N,2], a[-1,1], a[-1,2], lty=lty2, lwd=2, col=col2)
       #points(a, pch=16, cex=.15,  col=col2)
       # points(a[1,1], a[1,2], col='green', pch=16)
     })
@@ -288,6 +294,6 @@ for(mycor in c(.1, .5, .9)){
 }
 dev.off()
 
-sapply(traj1, \(x) nrow(x$traj)*eps) |> mean()
-sapply(traj2, \(x) nrow(x$traj)*eps) |> mean()
+sapply(traj1, \(x) nrow(x$traj)*eps) |> mean() |> print()
+sapply(traj2, \(x) nrow(x$traj)*eps) |> mean() |> print()
 

@@ -21,7 +21,9 @@ library(Matrix)
 theme_set(theme_bw())
 
 #' Convert metric to algorithm
-algf <- function(metric) factor(ifelse(metric=='unit' | metric=='Stan default', 'NUTS','SNUTS'))
+algf <- function(metric){
+  factor(ifelse(metric=='unit' | metric=='Stan default', 'NUTS','SNUTS'))
+}
 
 #' Make a factor of model names sorted alphabetically (for plotting)
 modelf <- function(x){
@@ -29,61 +31,18 @@ modelf <- function(x){
   factor(x, levels=labs)
 }
 
-benchmark_metrics <- function(obj, times=100, metrics=NULL, model=NULL){
-  if(is.null(metrics)){
-    metrics <- c('unit', 'diag', 'dense', 'sparse',  'sparse-J')
-    # if no RE, sparse won't work
-    if(length(obj$env$random)==0)  metrics <- c('unit', 'diag', 'dense')
-  }
-  # if(obj$env$DLL!='RTMB'){
-  #   metrics <- metrics[-which(metrics=='RTMBtape')]
-  # }
-  if(is.null(model))
-    model <- obj$env$DLL
-  message("optimizing model ", model, "...")
-  obj$env$beSilent()
-  opt <- with(obj, nlminb(par, fn, gr))
-  sdrep <- sdreport(obj, getJointPrecision=TRUE)
-  Q <- sdrep$jointPrecision
-  if(!is.null(Q)){
-    M <- solve(as.matrix(Q))
-  }  else {
-    M <- sdrep$cov.fixed
-    Q <- Matrix(solve(M), sparse = TRUE)
-  }
-  n <- length(obj$env$last.par.best)
-  res <- lapply(metrics, function(metric) {
-    out <- SparseNUTS::sample_snuts(obj, rotation_only = TRUE,
-                                     metric=metric, Q=Q, Qinv=M,
-                                     skip_optimization = TRUE)
-    metric <- out$metric # in case auto
-    x0 <- out$x.cur
-    # make sure to add tiny random component during benchmarking to
-    # avoid TMB tricks of skipping calcs
-    time <- summary(microbenchmark(out$gr2(x0+rnorm(n, sd=.0000001)),
-                                   unit='ms', times=times))$median
-    return(data.frame(metric=metric, what='gr', time=time))
-  })
-  res <- do.call(rbind, res) |>
-    tidyr::pivot_wider(id_cols=metric, names_from = what, values_from = time)
-  pct.sparsity <- round(100*mean(Q[lower.tri(Q)] == 0),2)
-  res <- cbind(res, npar=length(obj$env$last.par.best), pct.sparsity=pct.sparsity, model=model)
-  res
-}
-
-
 metricf <- function(x){
-  lvl <- c('unit', 'diag', 'dense', 'sparse', 'stan')
+  lvl <- c('unit', 'diag', 'dense', 'sparse', 'stan', 'tmbstan')
   labs <- lvl
   labs[5] <- 'Stan default'
   factor(x, levels=lvl, labels=labs)
 }
 
 #' Wrapper function to run warmup tests.
-fit_warmups <- function(obj, ...){
+fit_warmups <- function(obj, cpus, reps, ...){
   fit_models(obj=obj, num_samples=250,
              num_warmup=1000, chains=1,
-             adapt_stan_metric = TRUE,
+             adapt_metric = TRUE,
              outpath='results/warmups',
              metrics='auto', plot=FALSE,
              cpus=cpus, replicates=reps,
@@ -167,7 +126,7 @@ fit_models<- function(obj,  num_samples=NULL, num_warmup=NULL, chains=4,
   })
 
   fits <- do.call(rbind, fits)
-  saveRDS(fits, file=paste0(outpath,'/',model, '_fits.RDS'))
+  if(!is.null(outpath))  saveRDS(fits, file=paste0(outpath,'/',model, '_fits.RDS'))
   if(plot) plot_output(fits)
   return(invisible(fits))
 }
@@ -262,7 +221,7 @@ get_cors <- function(fits){
     post <- as.data.frame(fit)
     post.cor <- cor(post)
     post.cor <- as.numeric(post.cor[lower.tri(post.cor)])
-    mle.cor <- cov2cor(fit$mle$Qinv)
+    mle.cor <- fit$mle$cor
     mle.cor <- as.numeric(mle.cor[lower.tri(mle.cor)])
     data.frame(model=fit$model, replicate=fit$replicate,
                post.cor=post.cor, mle.cor=mle.cor,
@@ -537,7 +496,7 @@ sim_spde_dat <- function(n, sparse=TRUE, map=NULL, seed=NULL){
 
 
 
-get_wasserstein <- function(reps, obj, post, model,
+get_wasserstein <- function(reps, obj, post, model, savedraws=FALSE,
                             init=c('mode', 'post', 'unif-2', 'unif-1', '0')){
   # # use recursion to loop over multiple values (this fails!)
   # if(length(rep)>1)
@@ -550,7 +509,7 @@ get_wasserstein <- function(reps, obj, post, model,
   draws.post <- post |> select(-c(model, metric, replicate))
   out <- list()
   for(rep in reps){
-    message("Starting wassersteine distance for model=", model, "; rep=", rep, " at time=", Sys.time())
+    message("Starting w1d for model=", model, "; init=",init,"; rep=", rep, " at time=", Sys.time())
     set.seed(rep)
     if(init=='post')  inits <- as.numeric(draws.post[sample(1:nrow(draws.post), size=1),])
     if(init=='mode')  inits <- obj$env$last.par
@@ -600,8 +559,10 @@ get_wasserstein <- function(reps, obj, post, model,
                           par_inits=inits, quiet=TRUE, refresh=0)
     time.pf <- Sys.time()-time0
     draws.pf <- pf@draws |> as.data.frame() |> select(-(1:2)) |>
-      select(-c(.chain, .iteration, .draw))
-
+      select(-c(.chain, .iteration, .draw, path__))
+    if(savedraws & rep==1){
+      saveRDS(draws.pf, file=paste0('results/pathfinder/', model, '_draws.RDS'))
+    }
 
     ## calculate wasserstein distance for both
     library(transport)
@@ -624,4 +585,40 @@ get_wasserstein <- function(reps, obj, post, model,
   saveRDS(out, paste0('results/pathfinder/', model, '_pathfinder.RDS'))
   message("Done with wassersteine distance for model=", model)
   return(out)
+}
+
+
+
+# quick plot function for the gradient benchmarks
+plot.bench <- function(bench) {
+  bench_spde_gr <- bench |> group_by(metric,type, nrepars) |>
+    summarize(time=median(time), size=median(size), .groups='drop') |>
+    mutate(reltime=time/time[metric=='unit'],
+           relsize=size/size[metric=='unit']) |>
+    mutate(type=factor(type,
+                       levels=c('simple', 'original'),
+                       labels = c('Decorrelation', 'Decorrelation + gradient'))) |>
+    filter(metric %in% c('dense', 'diag','sparse')) |>
+    mutate(metric=metricf(metric)) |>
+    pivot_longer(cols=c(reltime,relsize)) |>
+    # some weird data massaging to get time and size into same long factor
+    filter(! (name=='relsize' & type =='Simple')) |>
+    mutate(type2=ifelse(name=='reltime', as.character(type), 'Memory size')) |>
+    mutate(type2=factor(type2,
+                        levels=c('Decorrelation',
+                                 'Decorrelation + gradient',
+                                 'Memory size')))
+  g <- ggplot(bench_spde_gr, aes(x=nrepars, y=value,
+                                 color=metric)) +
+    geom_line(linewidth=1, alpha=.8) + geom_point() +
+    labs(y='Value relative to no decorrelation',
+         x='Number of parameters',
+         color=NULL) +
+    facet_wrap('type2', nrow=1, scales='free_y') + scale_y_log10() +
+    scale_x_log10() +   geom_hline(yintercept=1)+
+    #guides(col=guide_legend(nrow=2)) +
+    theme(legend.position='inside',
+          legend.position.inside = c(.075,.77),
+          legend.background = element_rect(fill = "transparent"))
+  g
 }

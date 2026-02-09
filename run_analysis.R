@@ -38,22 +38,6 @@ source("code/run_warmup.R")
 source('code/run_case_studies.R')
 
 
-# Run some longer wildf ones to see if can identify why it's not
-# working better
-source("code/load_tmb_objects.R")
-thin <- 3
-warmup <- 2000
-iter <- 3000*thin+warmup
-fits.wildf2 <- fit_models(obj.wildf, warmup=warmup, replicates=1, cpus=1,
-                          thin=thin, iter=iter, metrics=c('unit', 'auto'),
-                          model = 'wildf2', init='last.par.best',
-                          control=list(adapt_delta=.8))
-fits.wildf3 <- fit_models(obj.wildf, warmup=warmup, replicates=1, cpus=1,
-                          thin=thin, iter=iter, metrics=c('unit', 'auto'),
-                          init = 'last.par.best',
-                          control=list(adapt_delta=.999),
-                          model = 'wildf3')
-
 
 
 source("code/process_results.R")

@@ -66,9 +66,9 @@ fits.sam <- fit_models(obj.sam,  cpus=cpus,
                      outpath=out)
 fits.sdmTMB <- fit_models(obj.sdmTMB,
                           control=list(adapt_delta=.9),
-                          cpus=cpus, replicates=1,
-                          do.tmbstan=FALSE,
-                          outpath=out)
+                          cpus=cpus, replicates=reps,
+                          do.tmbstan=TRUE,
+                          outpath=out, stepsize=.01)
 # Rerun with laplace turned on, called "embedded laplace
 # approximation" (ELA) by Margossian et al
 
@@ -122,6 +122,23 @@ fits.sdmTMB_ELA <- fit_models(obj.sdmTMB,
                               model='sdmTMB_ELA',
                               outpath=out)
 
+# Run some longer wildf ones to see if can identify why it's not
+# working better, make sure not to turn on mass matrix adaptation
+fits.wildf2_noadapt <- fit_models(obj.wildf, num_samples=3000, num_warmup=1000,
+                          replicates=1, cpus=1,
+                          metrics=c('unit','sparse'),
+                          init = 'random', plot=FALSE, outpath=NULL,
+                          control=list(adapt_delta=.999),
+                          model = 'wildf2')
+# now turn it on
+fits.wildf2_adapt <- fit_models(obj.wildf, num_samples=3000, num_warmup=1000,
+                                  replicates=1, cpus=1,
+                                  metrics='sparse', plot=FALSE, outpath=NULL,
+                                  init = 'random', adapt_metric=TRUE,
+                                  control=list(adapt_delta=.999),
+                                  model = 'wildf2_adapt')
+fits.wildf2 <- c(fits.wildf2_noadapt, fits.wildf2_adapt)
+saveRDS(fits.wildf2, file='results/case_studies/wildf_fits2.RDS')
 
 source('code/load_RTMB_objects.R')
 reps <- 1:3 # vector of replicate analyses

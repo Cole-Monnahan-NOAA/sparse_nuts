@@ -3,7 +3,7 @@
 
 # reference posteriors come from previously fitted models (auto
 # metric, see code/process_results.R)
-posts <- readRDS('results/ref_posts_list.RDS')
+posts <- readRDS('results/pathfinder/ref_posts_list.RDS')
 
 # which replicates to run, where each is a single optimization
 # path for Q and 4 for multiPathfinder in serial
@@ -17,7 +17,9 @@ source("code/load_rtmb_objects.R")
 # schools
 w.inits <-
   lapply(c('post', 'unif-1', 'unif-2', 'mode', '0'),
-       \(init) cbind(init=init, get_wasserstein(reps, obj.schools, posts[['schools']], 'schools', init=init))) |> bind_rows() |>
+       \(init)
+       get_wasserstein(reps, obj.schools, posts[['schools']], 'schools', init=init)) |>
+  cbind(init=init) |>  bind_rows() |>
   group_by(init) |>
   mutate(w1d_rel=w1d/mean(w1d[type=='Q'])) |>
   mutate(time_rel=time.total/mean(time.total[type=='Q']))
@@ -70,7 +72,7 @@ w.salamanders <- get_wasserstein(reps, obj.salamanders, posts[['salamanders']], 
 w.sam <- get_wasserstein(reps, obj.sam, posts[['sam']], 'sam', init='post')
 
 w.all <-
-  list.files(file.path(here("results/pathfinder/")), full.names = TRUE) |>
+  list.files(file.path(here("results/pathfinder/")), pattern="_pathfinder.RDS", full.names = TRUE) |>
   lapply(readRDS) |> bind_rows() |>
   group_by(model) |>
   mutate(w1d_rel=w1d/mean(w1d[type=='Q'])) |>
@@ -78,35 +80,4 @@ w.all <-
   arrange(w1d_rel, model)
 
 saveRDS(w.all, file='results/w1d_all.RDS')
-
-w.all <- readRDS('results/w1d_all.RDS')
-w.means <- group_by(w.all, model, type) |>
-  summarize(w1d_rel=mean(w1d_rel), time_rel=mean(time_rel), .groups='drop')
-# order by worst to best for Q
-lvls <- filter(w.means, type=='Pathfinder') |> arrange(w1d_rel) |> pull(model)
-w.all <- mutate(w.all, model=factor(model, levels=lvls))
-w.means <- mutate(w.means, model=factor(model, levels=lvls))
-
-g1 <- ggplot(w.all, aes(x=model, y=w1d, color=type)) +
-  geom_jitter(width=.1, alpha=.5) +
-  coord_flip() + labs(x=NULL, y='1D Wasserstein distance')+
-  scale_y_log10()
-g2 <- ggplot(w.all, aes(x=model, y=w1d_rel, color=type)) +
-  geom_jitter(width=.1, alpha=.5, pch=1, size=.8) +
-  coord_flip()+
-  theme(legend.position='inside', legend.position.inside = c(.7,.2))+
-  labs(x=NULL, color=NULL, y='1D Wasserstein distance relative to Q')+
-  scale_y_log10() + geom_point(data=w.means, pch=17, size=2)
-g3 <- ggplot(w.all, aes(x=model, y=time_rel, color=type)) +
-  geom_jitter(width=.1, alpha=.5, pch=1, size=.8) +
-  coord_flip() + scale_y_log10() +
-  labs(x='Model', y='Time relative to Q') +
-  theme(legend.position='none') +
-  geom_point(data=w.means, pch=17, size=2)
-g <- plot_grid(g3,  g2, nrow=1, labels = c('(a)', '(b)', '(c)')[-3],
-               label_size = 10)
-
-ggsave('plots/pathfinder_all.png', g, width=7, height=2.5, dpi=300)
-
-
 
