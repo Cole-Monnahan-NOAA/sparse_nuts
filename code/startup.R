@@ -597,7 +597,7 @@ plot.bench <- function(bench) {
            relsize=size/size[metric=='unit']) |>
     mutate(type=factor(type,
                        levels=c('simple', 'original'),
-                       labels = c('Decorrelation', 'Decorrelation + gradient'))) |>
+                       labels = c('Preconditioning', 'Preconditioning + gradient'))) |>
     filter(metric %in% c('dense', 'diag','sparse')) |>
     mutate(metric=metricf(metric)) |>
     pivot_longer(cols=c(reltime,relsize)) |>
@@ -605,8 +605,8 @@ plot.bench <- function(bench) {
     filter(! (name=='relsize' & type =='Simple')) |>
     mutate(type2=ifelse(name=='reltime', as.character(type), 'Memory size')) |>
     mutate(type2=factor(type2,
-                        levels=c('Decorrelation',
-                                 'Decorrelation + gradient',
+                        levels=c('Preconditioning',
+                                 'Preconditioning + gradient',
                                  'Memory size')))
   g <- ggplot(bench_spde_gr, aes(x=nrepars, y=value,
                                  color=metric)) +
