@@ -611,7 +611,7 @@ plot.bench <- function(bench) {
   g <- ggplot(bench_spde_gr, aes(x=nrepars, y=value,
                                  color=metric)) +
     geom_line(linewidth=1, alpha=.8) + geom_point() +
-    labs(y='Value relative to no decorrelation',
+    labs(y='Value relative to original model (q)',
          x='Number of parameters',
          color=NULL) +
     facet_wrap('type2', nrow=1, scales='free_y') + scale_y_log10() +
