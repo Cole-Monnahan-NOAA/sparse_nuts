@@ -17,10 +17,9 @@ obj$fn()
 obj$gr()
 
 ### Now SNUTS
-# devtools::install_github('Cole-Monnahan-NOAA/adnuts', ref='sparse_M')
-library(adnuts)
+library(SparseNUTS)
 library(StanEstimators)
-fit <- sample_sparse_tmb(obj, iter=1000, warmup=200, seed=1213)
+fit <- sample_snuts(obj, num_samples=800, num_warmup=200, seed=1213)
 fit$mle$Q    # joint precision
 fit$mle$Qinv # joint covariance
 post <- as.data.frame(fit)

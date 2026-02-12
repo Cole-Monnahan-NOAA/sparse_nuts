@@ -53,11 +53,11 @@ obj <- MakeADFun(data=dat, parameters=pars,  DLL='gp_pois_regr', random='f_tilde
 setwd(here::here('models/gp_pois_regr'))
 saveRDS(obj, 'obj.gp_pois_regr.RDS')
 setwd(here::here())
-fit <- sample_sparse_tmb(obj, iter=8000, warmup=200, chains=4,
+fit <- sample_snuts(obj, iter=8000, warmup=200, chains=4,
                          thin=4,
                          seed=1, control=list(adapt_delta=.99),
                          cores=4, globals=list(dat=dat))
-pairs_admb(fit, pars=1:5, order='slow')
+pairs(fit, pars=1:5, order='slow')
 
 ## compare correlations and marginal sds
 post <- as.data.frame(fit)

@@ -19,10 +19,11 @@ obj <- MakeADFun(data=data, parameters=inits,
                        DLL='wildf')
 saveRDS(obj, file='obj.wildf.RDS')
 
-fit <- sample_sparse_tmb(obj, iter=3000, warmup=500,
+library(SparseNUTS)
+fit <- sample_snuts(obj, iter=3000, warmup=500,
                          seed=1,
                          control=list(adapt_delta=.95))
-pairs_admb(fit, pars=1:5, order='slow')
+pairs(fit, pars=1:5, order='slow')
 
 obj$par |> length()
 obj$env$par |> length() - obj$par |> length()

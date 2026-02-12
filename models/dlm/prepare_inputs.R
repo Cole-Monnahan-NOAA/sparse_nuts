@@ -2,6 +2,7 @@
 ## https://james-thorson-noaa.github.io/dsem/articles/vignette.html#comparison-with-dynamic-linear-models
 
 library(dsem)
+library(SparseNUTS)
 data(KleinI, package="AER")
 TS = ts(data.frame(KleinI, "time"=time(KleinI) - 1931))
 
@@ -36,9 +37,9 @@ obj <- dsem(sem=inputs$sem,
 saveRDS(obj, file='models/dsem/obj.dlm.RDS')
 
 
-fit <- sample_sparse_tmb(obj, iter=2000, warmup=1000)
+fit <- sample_snuts(obj, iter=2000, warmup=1000)
 
-pairs_admb(fit, pars=1:7, order='slow')
+pairs(fit, pars=1:7, order='slow')
 plot_uncertainties(fit)
 plot_sampler_params(fit)
 

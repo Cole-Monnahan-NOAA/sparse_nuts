@@ -84,15 +84,15 @@ saveRDS(inputs, file='obj.irt_2pl.RDS')
 
 
 # run longer chain and compare correlations and marginal sds
-library(adnuts)
+library(SparseNUTS)
 obj <- MakeADFun(func, pars, random=c('theta', 'loga','b'))
-fit <- sample_sparse_tmb(obj, iter=3000, warmup=500, metric='auto',
+fit <- sample_snuts(obj, iter=3000, warmup=500, metric='auto',
                          globals = list(dat=dat), control=list(adapt_delta=.95))
-pairs_admb(fit, pars=1:6, order='slow')
-pairs_admb(fit, pars=1:6, order='mismatch')
-pairs_admb(fit, pars=c('logsigma_a', 'loga[1]', 'loga[2]', 'loga[3]'))
-pairs_admb(fit, pars=c('logsigma_theta', 'theta[1]', 'theta[2]', 'theta[3]'))
-pairs_admb(fit, pars=c('logsigma_b', 'b[1]', 'b[2]', 'b[3]'))
+pairs(fit, pars=1:6, order='slow')
+pairs(fit, pars=1:6, order='mismatch')
+pairs(fit, pars=c('logsigma_a', 'loga[1]', 'loga[2]', 'loga[3]'))
+pairs(fit, pars=c('logsigma_theta', 'theta[1]', 'theta[2]', 'theta[3]'))
+pairs(fit, pars=c('logsigma_b', 'b[1]', 'b[2]', 'b[3]'))
 post <- as.data.frame(fit)
 cors <- cor(post)
 max(abs(cors[lower.tri(cors)]))
@@ -143,13 +143,13 @@ func_nc <- function(pars){
 }
 obj_nc <- MakeADFun(func_nc, pars, random=c('theta', 'loga','b'))
 
-fit_nc <- sample_sparse_tmb(obj_nc, iter=3000, warmup=500, metric='auto',
+fit_nc <- sample_snuts(obj_nc, iter=3000, warmup=500, metric='auto',
                          globals = list(dat=dat), control=list(adapt_delta=.95))
-pairs_admb(fit_nc, pars=1:6, order='slow')
-pairs_admb(fit_nc, pars=1:6, order='mismatch')
-pairs_admb(fit_nc, pars=c('logsigma_a', 'loga[1]', 'loga[2]', 'loga[3]'))
-pairs_admb(fit_nc, pars=c('logsigma_theta', 'theta[1]', 'theta[2]', 'theta[3]'))
-pairs_admb(fit_nc, pars=c('logsigma_b', 'b[1]', 'b[2]', 'b[3]'))
+pairs(fit_nc, pars=1:6, order='slow')
+pairs(fit_nc, pars=1:6, order='mismatch')
+pairs(fit_nc, pars=c('logsigma_a', 'loga[1]', 'loga[2]', 'loga[3]'))
+pairs(fit_nc, pars=c('logsigma_theta', 'theta[1]', 'theta[2]', 'theta[3]'))
+pairs(fit_nc, pars=c('logsigma_b', 'b[1]', 'b[2]', 'b[3]'))
 post <- as.data.frame(fit_nc)
 cors <- cor(post)
 max(abs(cors[lower.tri(cors)]))

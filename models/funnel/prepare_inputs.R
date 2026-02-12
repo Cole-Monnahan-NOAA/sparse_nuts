@@ -33,17 +33,17 @@ diff.tmb <- obj$report(as.numeric(p1))$lp-
 diff.stan - diff.tmb # zero if the model matches
 
 ## run longer chains
-library(adnuts)
+library(SparseNUTS)
 library(StanEstimators)
-fit <- sample_sparse_tmb(obj, iter=2000, warmup=200, chains=4,
+fit <- sample_snuts(obj, iter=2000, warmup=200, chains=4,
                          cores=1)
-pairs_admb(fit, pars=1:4)
+pairs(fit, pars=1:4)
 post.tmb <- as.data.frame(fit)
 
 # do ELA
 fit.ela <- sample_sparse_tmb(obj, iter=2000, warmup=200, chains=4,
                              cores=1, laplace=TRUE)
-pairs_admb(fit.ela)
+pairs(fit.ela)
 
 # you just get the prior back b/c the Laplace approximation is
 # accurate

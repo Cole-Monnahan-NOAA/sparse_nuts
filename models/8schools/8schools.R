@@ -23,9 +23,9 @@ f <- function(pars){
 obj <- MakeADFun(f, pars, random=c("eta"), silent=TRUE)
 
 ## run longer chains
-library(adnuts)
+library(SparseNUTS)
 library(StanEstimators)
-fit <- sample_sparse_tmb(obj, iter=2000, warmup=200, chains=4,
+fit <- sample_snuts(obj, iter=2000, warmup=200, chains=4,
                          cores=4, globals=list(schools_dat=schools_dat))
 
 ## compare correlations and marginal sds
@@ -49,7 +49,7 @@ maxsd/minsd
 
 
 
-pairs_admb(fit, pars=1:6, order='slow')
+pairs(fit, pars=1:6, order='slow')
 plot_uncertainties(fit)
 plot_sampler_params(fit)
 

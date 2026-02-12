@@ -3,6 +3,7 @@
 # Requires loading RTMB
 library(dsem)
 library(RTMB)
+library(SparseNUTS)
 
 setwd(here('models/causal'))
 
@@ -51,11 +52,11 @@ inputs <- list(sem=sem, tsdata=Z,
                log_prior=log_prior, family=family)
 saveRDS(inputs, 'inputs.RDS')
 
-fit <- sample_sparse_tmb(obj, iter=2000, warmup=1000,
+fit <- sample_snuts(obj, iter=2000, warmup=1000,
                           init='random', seed=1,
                           control=list(adapt_delta=.8))
-pairs_admb(fit, order='mismatch', pars=1:5)
-pairs_admb(fit, order='slow', pars=1:5)
+pairs(fit, order='mismatch', pars=1:5)
+pairs(fit, order='slow', pars=1:5)
 
 
 obj$par |> length()

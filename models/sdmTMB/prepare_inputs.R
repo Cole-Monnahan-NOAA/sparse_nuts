@@ -1,6 +1,6 @@
 setwd(here::here('models/sdmTMB/'))
 
-
+library(SparseNUTS)
 library(sdmTMB)
 ## Example model
 mesh <- make_mesh(pcod, xy_cols = c("X", "Y"), cutoff = 10)
@@ -24,8 +24,8 @@ obj <- TMB::MakeADFun(data=obj$env$data, parameters=pars2,
 saveRDS(obj, file='obj.sdmTMB.RDS')
 
 
-fit <- sample_sparse_tmb(obj, iter=3000, warmup=500)
-pairs_admb(fit, pars=1:5, order='slow')
+fit <- sample_snuts(obj, iter=3000, warmup=500)
+pairs(fit, pars=1:5, order='slow')
 
 obj$par |> length()
 obj$env$par |> length()

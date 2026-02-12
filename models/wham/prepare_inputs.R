@@ -86,13 +86,13 @@ opt <- TMBhelper::fit_tmb(obj, getsd=FALSE, newtonsteps = 0)
 sdrep <- sdreport(obj, getJointPrecision=TRUE)
 Q <- sdrep$jointPrecision
 M <- as.matrix(solve(Q))
-library(adnuts)
-fit <- sample_sparse_tmb(obj, Q=Q, Qinv=M, skip_optimization = TRUE,
+library(SparseNUTS)
+fit <- sample_snuts(obj, Q=Q, Qinv=M, skip_optimization = TRUE,
                          iter=2300, warmup=300, seed=1, chains=5)
 save.image()
-pairs_admb(fit, pars=1:5, order='slow')
-pairs_admb(fit, pars=1:5, order='fast')
-pairs_admb(fit, pars=1:5, order='mismatch')
+pairs(fit, pars=1:5, order='slow')
+pairs(fit, pars=1:5, order='fast')
+pairs(fit, pars=1:5, order='mismatch')
 plot_uncertainties(fit)
 plot_Q(fit)
 

@@ -77,15 +77,15 @@ opt <- nlminb( obj$par, obj$fn, obj$gr, # hessian = obj$he,
 
 
 
-library(adnuts)
+library(SparseNUTS)
 globals <- list(dat=dat, rk4sys=rk4sys, dzdt=dzdt, f=f)
-fit <- sample_sparse_tmb(obj, seed=1, globals=globals,
+fit <- sample_snuts(obj, seed=1, globals=globals,
                          iter=3000, warmup=500,
                          control=list(adapt_delta=.99))
 
-pairs_admb(fit, order='mismatch', pars=1:5)
-pairs_admb(fit, order='slow', pars=1:5)
-pairs_admb(fit, pars=c('ln_sigma', 'ln_tau', 'z_ti[1]', 'z_ti[2]','z_ti[3]'))
+pairs(fit, order='mismatch', pars=1:5)
+pairs(fit, order='slow', pars=1:5)
+pairs(fit, pars=c('ln_sigma', 'ln_tau', 'z_ti[1]', 'z_ti[2]','z_ti[3]'))
 
 post <- as.data.frame(fit)
 hist(exp(post$ln_sigma), freq=FALSE)

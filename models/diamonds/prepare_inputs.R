@@ -8,6 +8,7 @@
 # saveRDS(dat, file='models/diamonds/dat.RDS')
 
 library(RTMB)
+library(SparseNUTS)
 
 setwd(here::here('models/diamonds'))
 diamonds_dat <- readRDS('dat.RDS')
@@ -66,9 +67,7 @@ diff.tmb <- obj$report(as.numeric(p1))$lp-
 diff.stan - diff.tmb
 
 ## run longer chains
-library(adnuts)
-library(StanEstimators)
-fit <- sample_sparse_tmb(obj, iter=2000, warmup=200, chains=4,
+fit <- sample_snuts(obj, iter=2000, warmup=200, chains=4,
                          cores=4,
                          globals=list(diamonds_dat=diamonds_dat))
 
@@ -93,7 +92,7 @@ maxsd/minsd
 
 
 
-pairs_admb(fit, pars=1:6, order='slow')
+pairs(fit, pars=1:6, order='slow')
 plot_uncertainties(fit)
 plot_sampler_params(fit)
 

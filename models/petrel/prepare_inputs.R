@@ -65,14 +65,14 @@ priors <- list(coeff_fe_obs = matrix(c(log(2), 0.5,
                                        ncol = 2, byrow = TRUE))
 hmm$set_priors(new_priors = priors)
 
-library(adnuts)
+library(SparseNUTS)
 hmm$setup()
 obj <- hmm$tmb_obj()
 saveRDS(obj, file='obj.petrel.RDS')
 
-fit <- sample_sparse_tmb(obj, iter=2000, warmup=500, seed=1)
-pairs_admb(fit, pars=1:5, order='slow')
-pairs_admb(fit, pars=1:5, order='mismatch')
+fit <- sample_snuts(obj, iter=2000, warmup=500, seed=1)
+pairs(fit, pars=1:5, order='slow')
+pairs(fit, pars=1:5, order='mismatch')
 plot_uncertainties(fit)
 plot_Q(fit)
 

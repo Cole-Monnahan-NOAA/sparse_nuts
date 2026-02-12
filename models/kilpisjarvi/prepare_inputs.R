@@ -61,10 +61,10 @@ diff.tmb <- obj$report(as.numeric(p1))$lp-
 
 diff.stan - diff.tmb
 
-library(adnuts)
-fit <- sample_sparse_tmb(obj, iter=2000, warmup=1000, chains=4,
+library(SparseNUTS)
+fit <- sample_snuts(obj, iter=2000, warmup=1000, chains=4,
                          cores=4, globals=list(dat=dat))
-pairs_admb(fit)
+pairs(fit)
 plot_uncertainties(fit)
 plot_sampler_params(fit)
 

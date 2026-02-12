@@ -28,9 +28,9 @@ obj$par <- opt$opt$par
 saveRDS(obj, 'obj.pollock.RDS')
 
 ## run longer chains
-library(adnuts)
+library(SparseNUTS)
 library(StanEstimators)
-fit <- sample_sparse_tmb(obj, iter=4000, warmup=200, chains=4,
+fit <- sample_snuts(obj, iter=4000, warmup=200, chains=4,
                          cores=4)
 ## compare correlations and marginal sds
 post <- as.data.frame(fit)
@@ -53,8 +53,8 @@ maxsd/minsd
 
 
 
-pairs_admb(fit, pars=1:4, order='slow')
-pairs_admb(fit, pars=1:4, order='mismatch')
+pairs(fit, pars=1:4, order='slow')
+pairs(fit, pars=1:4, order='mismatch')
 plot_uncertainties(fit)
 plot_sampler_params(fit)
 
